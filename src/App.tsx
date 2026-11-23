@@ -128,8 +128,8 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Track a stable key of source frame IDs + order so batch conversion triggers cleanly without loops
-  const sourceKey = useMemo(() => frames.map((f) => f.id).join('|'), [frames]);
+  // Track frame membership, not timeline order: reordering should not restart the Worker.
+  const sourceKey = useMemo(() => frames.map((f) => f.id).sort().join('|'), [frames]);
   const framesRef = useRef<AnimationFrameItem[]>(frames);
   framesRef.current = frames;
 
@@ -411,6 +411,11 @@ export default function App() {
       setActiveSampleId(null);
 
       if (mode === 'append' && framesRef.current.length > 0) {
+        // A new frame can change the shared auto palette; keep existing manual
+        // edits intact and let the user choose whether to apply the new result.
+        if (framesRef.current.some((f) => f.historyIndex > 0 && f.editHistory.length > 0)) {
+          setHasPendingReconvert(true);
+        }
         setFrames((prev) => [...prev, ...loaded]);
         setActiveFrameId(loaded[0].id);
         if (framesRef.current.length + loaded.length > 1) {
@@ -486,7 +491,7 @@ export default function App() {
     (next: ImageData) => {
       if (!activeFrame || !activeFrame.convertedResult) return;
       const targetId = activeFrame.id;
-      setHasPendingReconvert(false);
+      // Ongoing painting must not silently dismiss a pending palette change.
 
       setFrames((prev) =>
         prev.map((f) => {
@@ -586,6 +591,13 @@ export default function App() {
   }, []);
 
   const handleDeleteFrame = useCallback((id: string) => {
+    const currentFrames = framesRef.current;
+    if (currentFrames.length <= 1 || !currentFrames.some((f) => f.id === id)) return;
+    // Removing a frame can also change the shared palette. Only warn if a
+    // surviving frame still has manual edits to preserve.
+    if (currentFrames.some((f) => f.id !== id && f.historyIndex > 0 && f.editHistory.length > 0)) {
+      setHasPendingReconvert(true);
+    }
     setFrames((prev) => {
       if (prev.length <= 1) return prev;
       const idx = prev.findIndex((f) => f.id === id);
