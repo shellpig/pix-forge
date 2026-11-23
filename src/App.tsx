@@ -155,7 +155,9 @@ export default function App() {
   const sourceKey = useMemo(() => frames.map((f) => f.id).sort().join('|'), [frames]);
   const framesRef = useRef<AnimationFrameItem[]>(frames);
   framesRef.current = frames;
-  const isHydratedRef = useRef<boolean>(false);
+  const activeFrameIdRef = useRef(activeFrameId);
+  activeFrameIdRef.current = activeFrameId;
+  const workspaceReadyRef = useRef(false);
   const undoStackRef = useRef<UndoActionEntry[]>([]);
   const redoStackRef = useRef<UndoActionEntry[]>([]);
 
@@ -387,9 +389,11 @@ export default function App() {
 
   // Load built-in single sample
   const loadSample = useCallback(
-    async (sample: (typeof BUILTIN_SAMPLES)[number]) => {
+    async (sample: (typeof BUILTIN_SAMPLES)[number], canApply?: () => boolean) => {
       try {
         const img = await loadHtmlImageFromUrl(sample.src);
+        if (canApply && !canApply()) return;
+        workspaceReadyRef.current = true;
         const id = makeFrameId();
         clearUndoStacks();
         setErrorMsg(null);
@@ -419,7 +423,9 @@ export default function App() {
           return { ...prev, targetW: sample.defaultW, targetH: sample.defaultH, crop };
         });
       } catch {
-        setErrorMsg(tRef.current('error.sampleLoad'));
+        if (!canApply || canApply()) {
+          setErrorMsg(tRef.current('error.sampleLoad'));
+        }
       }
     },
     [clearUndoStacks]
@@ -428,11 +434,12 @@ export default function App() {
   // Initial load: restore previous workspace from IndexedDB, or fall back to built-in sample
   useEffect(() => {
     let cancelled = false;
+    const canApplyStartupWorkspace = () => !cancelled && !workspaceReadyRef.current;
 
     const hydrate = async () => {
       try {
         const saved = await loadPersistedWorkspace();
-        if (cancelled) return;
+        if (!canApplyStartupWorkspace()) return;
 
         if (saved && saved.frames.length > 0) {
           const decoded = await Promise.all(
@@ -469,9 +476,10 @@ export default function App() {
             })
           );
 
-          if (cancelled) return;
+          if (!canApplyStartupWorkspace()) return;
           const restoredFrames = decoded.filter((f): f is AnimationFrameItem => f !== null);
           if (restoredFrames.length > 0) {
+            workspaceReadyRef.current = true;
             clearUndoStacks();
             setErrorMsg(null);
             setActiveSampleId(saved.activeSampleId);
@@ -488,7 +496,6 @@ export default function App() {
                 ? saved.activeFrameId
                 : restoredFrames[0].id;
             setActiveFrameId(nextActiveId);
-            isHydratedRef.current = true;
             return;
           }
         }
@@ -496,9 +503,8 @@ export default function App() {
         // Fall through to default sample
       }
 
-      if (!cancelled) {
-        await loadSample(BUILTIN_SAMPLES[0]);
-        if (!cancelled) isHydratedRef.current = true;
+      if (canApplyStartupWorkspace()) {
+        await loadSample(BUILTIN_SAMPLES[0], canApplyStartupWorkspace);
       }
     };
 
@@ -509,8 +515,10 @@ export default function App() {
   }, [loadSample, clearUndoStacks]);
 
   // Auto-save current workspace (images, manual edits, settings) to IndexedDB
+  // Playback advances the active frame without restarting the save timer.
+  const pausedFrameId = isPlaying ? null : activeFrameId;
   useEffect(() => {
-    if (!isHydratedRef.current || frames.length === 0) return;
+    if (!workspaceReadyRef.current || frames.length === 0) return;
 
     const timerId = window.setTimeout(() => {
       const persistedFrames = frames
@@ -535,7 +543,7 @@ export default function App() {
         version: 1,
         savedAt: Date.now(),
         activeSampleId,
-        activeFrameId,
+        activeFrameId: activeFrameIdRef.current,
         viewMode,
         config,
         fps,
@@ -546,7 +554,7 @@ export default function App() {
     }, 450);
 
     return () => window.clearTimeout(timerId);
-  }, [frames, activeFrameId, activeSampleId, viewMode, config, fps, exportScale, spriteSheetCols]);
+  }, [frames, pausedFrameId, activeSampleId, viewMode, config, fps, exportScale, spriteSheetCols]);
 
   // Multi-file or single-file upload handler (with natural numeric filename sorting!)
   const handleUploadFiles = useCallback(async (rawFiles: File[], mode: 'replace' | 'append') => {
@@ -580,6 +588,7 @@ export default function App() {
         })
       );
 
+      workspaceReadyRef.current = true;
       setErrorMsg(null);
       setActiveSampleId(null);
 
