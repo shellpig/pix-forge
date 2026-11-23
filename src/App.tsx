@@ -25,6 +25,7 @@ import {
   exportFramesZipBlob,
   exportSpriteSheetPngBlob,
 } from './lib/animationExport';
+import { getSpriteSheetLayout } from './lib/spriteSheetLayout';
 
 type BatchWorkerReply =
   | { type: 'success'; results: PixelEngineResult[] }
@@ -114,7 +115,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [lockAspect, setLockAspect] = useState<boolean>(false);
   const [exportScale, setExportScale] = useState<number>(8);
-  const [spriteSheetCols, setSpriteSheetCols] = useState<number>(0); // 0 = single horizontal strip
+  const [spriteSheetCols, setSpriteSheetCols] = useState<number>(0); // 0 = automatic near-square grid, -1 = single row
   const [fps, setFps] = useState<number>(8);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -752,20 +753,30 @@ export default function App() {
     if (ready.length === 0) return;
     setIsExporting(true);
     try {
-      const cols =
-        spriteSheetCols <= 0 || spriteSheetCols > ready.length ? ready.length : spriteSheetCols;
+      // Check the actual ready frame count before attempting any Canvas allocation.
+      const layout = getSpriteSheetLayout(
+        ready[0].imageData.width,
+        ready[0].imageData.height,
+        ready.length,
+        exportScale,
+        spriteSheetCols
+      );
+      if (!layout.isWithinLimits) {
+        setErrorMsg(layout.errorMessage);
+        return;
+      }
       const blob = await exportSpriteSheetPngBlob(
         ready.map((r) => r.imageData),
         exportScale,
-        cols
+        spriteSheetCols
       );
       const base = ready[0].name.replace(/\.[^.]+$/, '');
       triggerBlobDownload(
         blob,
         `${base}_sheet_${ready.length}f_${config.targetW}x${config.targetH}_${exportScale}x.png`
       );
-    } catch {
-      setErrorMsg('匯出 Sprite Sheet 失敗，請再試一次。');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '匯出 Sprite Sheet 失敗，請再試一次。');
     } finally {
       setIsExporting(false);
     }
