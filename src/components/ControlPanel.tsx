@@ -5,6 +5,9 @@ import {
   Copy,
   Crop,
   Download,
+  Film,
+  FolderArchive,
+  LayoutGrid,
   Lock,
   RotateCcw,
   Unlock,
@@ -22,9 +25,14 @@ interface ControlPanelProps {
   config: PixelEngineConfig;
   result: PixelEngineResult | null;
   sourceSize: { w: number; h: number } | null;
+  frameCount: number;
+  fps: number;
+  spriteSheetCols: number;
+  isExporting: boolean;
   lockAspect: boolean;
   exportScale: number;
   onChangeExportScale: (scale: number) => void;
+  onChangeSpriteSheetCols: (cols: number) => void;
   onToggleLockAspect: () => void;
   onUpdateConfig: (patch: Partial<PixelEngineConfig>) => void;
   onSelectDimensions: (w: number, h: number) => void;
@@ -33,6 +41,9 @@ interface ControlPanelProps {
   onPickColor: (hex: string) => void;
   onDownloadPng: () => void;
   onCopyPng: () => Promise<void>;
+  onDownloadSpriteSheet: () => void;
+  onDownloadGif: () => void;
+  onDownloadZip: () => void;
 }
 
 const SQUARE_PRESETS: Array<[number, number]> = [
@@ -80,9 +91,14 @@ export function ControlPanel({
   config,
   result,
   sourceSize,
+  frameCount,
+  fps,
+  spriteSheetCols,
+  isExporting,
   lockAspect,
   exportScale,
   onChangeExportScale,
+  onChangeSpriteSheetCols,
   onToggleLockAspect,
   onUpdateConfig,
   onSelectDimensions,
@@ -91,6 +107,9 @@ export function ControlPanel({
   onPickColor,
   onDownloadPng,
   onCopyPng,
+  onDownloadSpriteSheet,
+  onDownloadGif,
+  onDownloadZip,
 }: ControlPanelProps) {
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
   const [copiedImg, setCopiedImg] = useState<boolean>(false);
@@ -136,13 +155,21 @@ export function ControlPanel({
 
   const activeDownscale = DOWNSCALE_OPTIONS.find((o) => o.id === config.downscaleMode);
 
+  const effectiveCols =
+    spriteSheetCols <= 0 || spriteSheetCols > frameCount ? Math.max(1, frameCount) : spriteSheetCols;
+  const effectiveRows = Math.max(1, Math.ceil(frameCount / effectiveCols));
+  const sheetW = config.targetW * exportScale * effectiveCols;
+  const sheetH = config.targetH * exportScale * effectiveRows;
+
   return (
     <aside className="w-full md:w-[308px] xl:w-[356px] shrink-0 border-t md:border-t-0 md:border-l border-[#222733] bg-[#11141B] flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
         {/* Section 1: Output Resolution & Crop */}
         <section className="p-4 space-y-3.5">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">輸出像素尺寸</h2>
+            <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
+              輸出像素尺寸{frameCount > 1 ? '（全組共用）' : ''}
+            </h2>
             <button
               type="button"
               onClick={onOpenCropMode}
@@ -153,7 +180,6 @@ export function ControlPanel({
             </button>
           </div>
 
-          {/* Numeric W x H Inputs */}
           <div className="flex items-center gap-2">
             <label className="flex-1">
               <span className="block text-[11px] text-[#8B95A8] mb-1">寬度 (W)</span>
@@ -202,7 +228,6 @@ export function ControlPanel({
             </button>
           </div>
 
-          {/* Quick Presets */}
           <div className="space-y-2">
             <div>
               <span className="block text-[11px] text-[#64748B] mb-1.5">常用正方形</span>
@@ -252,7 +277,7 @@ export function ControlPanel({
           </div>
         </section>
 
-        {/* Section 2: Downscale & Contrast-Aware Outline Expansion */}
+        {/* Section 2: Downscale & Contrast-Aware Algorithm */}
         <section className="p-4 space-y-3.5">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
@@ -292,7 +317,6 @@ export function ControlPanel({
             <p className="text-[11px] leading-relaxed text-[#8B95A8]">{activeDownscale.desc}</p>
           )}
 
-          {/* Edge-Preserving Pre-Smoothing */}
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#CBD5E1]">色塊平滑化（去細線雜訊）</span>
@@ -309,7 +333,6 @@ export function ControlPanel({
             />
           </div>
 
-          {/* Gentle Contrast-Aware Outline Accent */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#CBD5E1]">細緻輪廓強調</span>
@@ -326,7 +349,6 @@ export function ControlPanel({
             />
           </div>
 
-          {/* Pre-Sharpen */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#CBD5E1]">邊緣銳化</span>
@@ -350,7 +372,6 @@ export function ControlPanel({
             色彩量化與色盤 (OKLab)
           </h2>
 
-          {/* Mode Tabs */}
           <div className="grid grid-cols-3 gap-1 p-1 bg-[#161A23] border border-[#252B39] rounded-md">
             {(
               [
@@ -375,7 +396,40 @@ export function ControlPanel({
           </div>
 
           {config.paletteMode === 'auto' && (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
+              {/* Shared Sequence Palette Toggle (confirmed Phase 1 preference!) */}
+              {frameCount > 1 && (
+                <div className="p-2.5 rounded bg-[#161A23] border border-[#252B39] space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-[#E2E8F0]">
+                      全組共用統一色盤
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config.sharedSequencePalette}
+                      onClick={() =>
+                        onUpdateConfig({ sharedSequencePalette: !config.sharedSequencePalette })
+                      }
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                        config.sharedSequencePalette ? 'bg-sky-500' : 'bg-[#2C3344]'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                          config.sharedSequencePalette ? 'translate-x-4.5' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#8B95A8] leading-snug">
+                    {config.sharedSequencePalette
+                      ? '跨全部影格萃取同一套色盤，播放動畫時色彩穩定不閃爍。'
+                      : '每張影格各自獨立算色盤（適合畫面色系差異極大的影格）。'}
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#CBD5E1]">色數上限</span>
                 <span className="font-mono tabular-nums text-sky-300">
@@ -452,7 +506,6 @@ export function ControlPanel({
             </div>
           )}
 
-          {/* Dithering Controls (available when palette quantization is active) */}
           {config.paletteMode !== 'full' && (
             <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between gap-2">
@@ -503,7 +556,6 @@ export function ControlPanel({
             </div>
           )}
 
-          {/* Live Extracted Swatches */}
           {result && result.palette.length > 0 && (
             <div className="pt-1">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A8] mb-1.5">
@@ -589,7 +641,7 @@ export function ControlPanel({
       </div>
 
       {/* Pinned Export Footer inside Inspector */}
-      <div className="p-4 border-t border-[#222733] bg-[#0F1218] space-y-3 shrink-0">
+      <div className="p-4 border-t border-[#222733] bg-[#0F1218] space-y-2.5 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-[#CBD5E1] whitespace-nowrap">匯出倍率</span>
           <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
@@ -610,37 +662,119 @@ export function ControlPanel({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={!result}
-            onClick={onDownloadPng}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            下載 PNG ({config.targetW * exportScale}×{config.targetH * exportScale})
-          </button>
+        {frameCount > 1 ? (
+          /* Multi-Frame Animation Export Panel */
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-[#94A3B8] whitespace-nowrap">Sheet 排列欄數</span>
+              <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
+                {[0, 2, 4, 8]
+                  .filter((c) => c === 0 || c < frameCount)
+                  .map((c) => {
+                    const active = spriteSheetCols === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => onChangeSpriteSheetCols(c)}
+                        className={`px-2 py-1 text-[11px] font-mono tabular-nums rounded transition-colors whitespace-nowrap cursor-pointer ${
+                          active
+                            ? 'bg-[#262E40] text-sky-300 font-medium'
+                            : 'text-[#8B95A8] hover:text-[#CBD5E1]'
+                        }`}
+                      >
+                        {c === 0 ? `單排(${frameCount})` : `${c}欄`}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
 
-          <button
-            type="button"
-            disabled={!result}
-            onClick={handleCopyImageClick}
-            title="複製 PNG 到剪貼簿"
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
-          >
-            {copiedImg ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                已複製
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                複製
-              </>
-            )}
-          </button>
-        </div>
+            <button
+              type="button"
+              disabled={!result || isExporting}
+              onClick={onDownloadSpriteSheet}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Sprite Sheet PNG ({sheetW}×{sheetH})
+            </button>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                disabled={!result || isExporting}
+                onClick={onDownloadGif}
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Film className="w-3.5 h-3.5 text-sky-400" />
+                動態 GIF ({fps} FPS)
+              </button>
+
+              <button
+                type="button"
+                disabled={!result || isExporting}
+                onClick={onDownloadZip}
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-sky-400" />
+                影格 ZIP ({frameCount}張)
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#8B95A8]">
+              <button
+                type="button"
+                disabled={!result}
+                onClick={onDownloadPng}
+                className="hover:text-sky-300 transition-colors cursor-pointer"
+              >
+                下載目前單格 PNG
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={handleCopyImageClick}
+                className="hover:text-sky-300 transition-colors cursor-pointer"
+              >
+                {copiedImg ? '已複製目前單格' : '複製目前單格'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Single-Image Export Buttons */
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!result}
+              onClick={onDownloadPng}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              下載 PNG ({config.targetW * exportScale}×{config.targetH * exportScale})
+            </button>
+
+            <button
+              type="button"
+              disabled={!result}
+              onClick={handleCopyImageClick}
+              title="複製 PNG 到剪貼簿"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+            >
+              {copiedImg ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  已複製
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  複製
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

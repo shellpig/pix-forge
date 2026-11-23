@@ -10,6 +10,12 @@ import {
   Crop as CropIcon,
   Eye,
   EyeOff,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Pencil,
+  Film,
 } from 'lucide-react';
 import { hexToRgb, rgbToHex } from '../lib/palettes';
 import {
@@ -26,8 +32,9 @@ import {
   getPixelAt,
 } from '../lib/pixelEditOps';
 import { PixelEditorBar, PixelEditorState } from './PixelEditorBar';
+import { FrameTimelineBar, TimelineFramePreview } from './FrameTimelineBar';
 
-export type ViewMode = 'side-by-side' | 'split' | 'pixel' | 'crop' | 'edit';
+export type ViewMode = 'side-by-side' | 'split' | 'pixel' | 'crop' | 'edit' | 'animate';
 export type BackdropMode = 'checker' | 'dark' | 'light';
 
 interface SampleItem {
@@ -48,6 +55,21 @@ interface CanvasViewportProps {
   hasManualEdits: boolean;
   editStepCount: number;
   hasPendingReconvert: boolean;
+  isBatchProcessing: boolean;
+  // Animation sequence props
+  timelineFrames: TimelineFramePreview[];
+  activeFrameId: string | null;
+  isPlaying: boolean;
+  fps: number;
+  onTogglePlay: () => void;
+  onStepFrame: (delta: -1 | 1) => void;
+  onChangeFps: (fps: number) => void;
+  onSelectFrame: (id: string) => void;
+  onEditFrame: (id: string) => void;
+  onReorderFrames: (fromIndex: number, toIndex: number) => void;
+  onDeleteFrame: (id: string) => void;
+  onUploadFiles: (files: File[], mode: 'replace' | 'append') => void;
+  // Editor & viewport callbacks
   onUpdateEditor: (patch: Partial<PixelEditorState>) => void;
   onCommitImageData: (next: ImageData) => void;
   onUndo: () => void;
@@ -58,7 +80,6 @@ interface CanvasViewportProps {
   onDismissPendingReconvert: () => void;
   onChangeCrop: (crop: CropRect) => void;
   onSelectDimensions: (w: number, h: number) => void;
-  onUploadFile: (file: File) => void;
   samples: SampleItem[];
   activeSampleId: string | null;
   onSelectSample: (sample: SampleItem) => void;
@@ -73,6 +94,8 @@ const QUICK_RES_BUTTONS: Array<[number, number]> = [
   [96, 96],
   [128, 128],
 ];
+
+const FPS_PRESETS = [6, 8, 12, 15, 24];
 
 function PixelGridOverlay({
   width,
@@ -174,6 +197,19 @@ export function CanvasViewport({
   hasManualEdits,
   editStepCount,
   hasPendingReconvert,
+  isBatchProcessing,
+  timelineFrames,
+  activeFrameId,
+  isPlaying,
+  fps,
+  onTogglePlay,
+  onStepFrame,
+  onChangeFps,
+  onSelectFrame,
+  onEditFrame,
+  onReorderFrames,
+  onDeleteFrame,
+  onUploadFiles,
   onUpdateEditor,
   onCommitImageData,
   onUndo,
@@ -184,7 +220,6 @@ export function CanvasViewport({
   onDismissPendingReconvert,
   onChangeCrop,
   onSelectDimensions,
-  onUploadFile,
   samples,
   activeSampleId,
   onSelectSample,
@@ -205,9 +240,8 @@ export function CanvasViewport({
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showRealSize, setShowRealSize] = useState<boolean>(true);
-  const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 800, h: 520 });
 
-  // Live pixel editing refs (zero React re-render lag while dragging brush/eraser)
   const workingImgRef = useRef<ImageData | null>(null);
   const strokeActiveRef = useRef<{
     active: boolean;
@@ -224,7 +258,6 @@ export function CanvasViewport({
     isTransparent: boolean;
   } | null>(null);
 
-  // Interactive crop state
   const cropBoxRef = useRef<HTMLDivElement | null>(null);
   const [cropDrag, setCropDrag] = useState<{
     handle: DragHandle;
@@ -235,7 +268,9 @@ export function CanvasViewport({
     boxH: number;
   } | null>(null);
 
-  // Auto-enable grid on first visit to Edit Mode so pixel cells are immediately clear
+  const showTimeline = timelineFrames.length > 1 || viewMode === 'animate';
+  const activeFrameIdx = timelineFrames.findIndex((f) => f.id === activeFrameId);
+
   useEffect(() => {
     if (viewMode === 'edit' && !hasEnteredEditOnce) {
       setShowGrid(true);
@@ -243,7 +278,6 @@ export function CanvasViewport({
     }
   }, [viewMode, hasEnteredEditOnce]);
 
-  // Measure viewport container
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -271,13 +305,11 @@ export function CanvasViewport({
     }
   };
 
-  // Draw pixel art result onto main & actual-size canvases
   useEffect(() => {
     if (!result) return;
     syncCanvasesWithImageData(result.imageData);
   }, [result, viewMode, showRealSize]);
 
-  // Draw cropped source image onto comparison source canvas
   useEffect(() => {
     const canvas = sourceCropCanvasRef.current;
     if (!canvas || !sourceImage || (viewMode !== 'side-by-side' && viewMode !== 'split')) return;
@@ -307,7 +339,6 @@ export function CanvasViewport({
     }
   }, [sourceImage, config.crop, viewMode]);
 
-  // Split handle pointer drag
   useEffect(() => {
     if (!isDraggingSplit) return;
     const handleMove = (e: PointerEvent) => {
@@ -326,7 +357,6 @@ export function CanvasViewport({
     };
   }, [isDraggingSplit]);
 
-  // Crop box pointer drag
   useEffect(() => {
     if (!cropDrag || !sourceImage) return;
 
@@ -479,7 +509,6 @@ export function CanvasViewport({
     const coords = getPixelCoordsFromEvent(e);
     if (!coords) return;
 
-    // Alt + Left-Click anywhere = instant Eyedropper
     if (e.altKey || (e.button === 0 && editor.tool === 'eyedropper')) {
       const picked = getPixelAt(result.imageData, coords.x, coords.y);
       if (picked && picked.a > 0) {
@@ -491,7 +520,6 @@ export function CanvasViewport({
       return;
     }
 
-    // Right-Click = instant Manual Pixel Eraser (手動點格去背)
     const effectiveTool = e.button === 2 ? 'eraser' : editor.tool;
 
     if (effectiveTool === 'bucket') {
@@ -523,7 +551,6 @@ export function CanvasViewport({
       return;
     }
 
-    // Pencil or Eraser stroke
     const rgb = hexToRgb(editor.colorHex);
     const strokeColor: RGBA =
       effectiveTool === 'eraser'
@@ -572,10 +599,9 @@ export function CanvasViewport({
     }
   };
 
-  // Compute crisp display dimensions
   const targetRatio = config.targetW / config.targetH;
-  const availW = Math.max(240, viewportSize.w - (viewMode === 'side-by-side' ? 96 : 64));
-  const availH = Math.max(240, viewportSize.h - 96);
+  const availW = Math.max(220, viewportSize.w - (viewMode === 'side-by-side' ? 96 : 64));
+  const availH = Math.max(200, viewportSize.h - 80);
 
   const singleSlotMaxW = viewMode === 'side-by-side' ? Math.floor((availW - 24) / 2) : availW;
   const singleSlotMaxH = availH;
@@ -600,21 +626,20 @@ export function CanvasViewport({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      onUploadFile(file);
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
+    if (files.length > 0) {
+      onUploadFiles(files, 'replace');
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onUploadFile(file);
+    const files = e.target.files ? Array.from(e.target.files).filter((f) => f.type.startsWith('image/')) : [];
+    if (files.length > 0) {
+      onUploadFiles(files, 'replace');
     }
     e.target.value = '';
   };
 
-  // Compute pixel cursor highlight rectangle in Edit Mode
   const brushPreviewRect = (() => {
     if (viewMode !== 'edit' || !hoverPixel || !result) return null;
     const isSingleCellTool =
@@ -640,8 +665,10 @@ export function CanvasViewport({
     <div
       className="flex-1 flex flex-col min-w-0 min-h-[420px] bg-[#0B0D11] relative select-none"
       onDragOver={(e) => {
-        e.preventDefault();
-        setIsDragOver(true);
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+          setIsDragOver(true);
+        }
       }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
@@ -649,6 +676,7 @@ export function CanvasViewport({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept="image/png,image/jpeg,image/webp,image/gif"
         className="hidden"
         onChange={handleFileChange}
@@ -660,10 +688,11 @@ export function CanvasViewport({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            title="可選取單張圖片，或一次多選多張連續圖自動建立動畫序列"
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5 text-sky-400" />
-            上傳圖片
+            上傳圖片 / 多張動畫
           </button>
 
           <div className="h-4 w-px bg-[#262B38] mx-0.5" aria-hidden="true" />
@@ -709,9 +738,15 @@ export function CanvasViewport({
           </div>
         </div>
 
-        {/* Right Canvas Controls: Grid, Backdrop, Zoom */}
+        {/* Right Canvas Controls: Batch Status, Grid, Backdrop, Zoom */}
         <div className="flex flex-wrap items-center gap-2">
-          {sourceImage && result && (
+          {isBatchProcessing && (
+            <span className="text-xs text-sky-300 font-mono tabular-nums whitespace-nowrap">
+              批次轉換中…
+            </span>
+          )}
+
+          {sourceImage && result && !isBatchProcessing && (
             <div className="hidden 2xl:flex items-center gap-2 text-xs text-[#94A3B8] font-mono tabular-nums whitespace-nowrap mr-1">
               <span className="max-w-[120px] truncate text-[#CBD5E1] font-sans">{sourceName}</span>
               <span aria-hidden="true">·</span>
@@ -787,6 +822,108 @@ export function CanvasViewport({
         </div>
       </div>
 
+      {/* Animation Playback Bar (visible in Animate Mode) */}
+      {viewMode === 'animate' && (
+        <div className="px-3.5 py-2 border-b border-[#222733] bg-[#131722] flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Transport Controls */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={timelineFrames.length < 2}
+                onClick={() => onStepFrame(-1)}
+                title="上一格 (←)"
+                className="p-1.5 bg-[#0D1017] hover:bg-[#1C2230] border border-[#262C3B] disabled:opacity-35 rounded text-[#CBD5E1] hover:text-white transition-colors cursor-pointer"
+              >
+                <SkipBack className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                disabled={timelineFrames.length < 2}
+                onClick={onTogglePlay}
+                title={isPlaying ? '暫停播放 (Space)' : '開始循環播放 (Space)'}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap disabled:opacity-40 cursor-pointer ${
+                  isPlaying
+                    ? 'bg-amber-400 hover:bg-amber-300 text-[#0B0D11]'
+                    : 'bg-sky-400 hover:bg-sky-300 text-[#081018]'
+                }`}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {isPlaying ? '暫停' : '播放'}
+              </button>
+
+              <button
+                type="button"
+                disabled={timelineFrames.length < 2}
+                onClick={() => onStepFrame(1)}
+                title="下一格 (→)"
+                className="p-1.5 bg-[#0D1017] hover:bg-[#1C2230] border border-[#262C3B] disabled:opacity-35 rounded text-[#CBD5E1] hover:text-white transition-colors cursor-pointer"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <span className="text-xs font-mono tabular-nums text-[#CBD5E1] px-1">
+              影格{' '}
+              <strong className="text-sky-300">
+                {activeFrameIdx >= 0 ? String(activeFrameIdx + 1).padStart(2, '0') : '01'}
+              </strong>{' '}
+              / {String(timelineFrames.length).padStart(2, '0')}
+            </span>
+
+            <div className="h-4 w-px bg-[#262B38]" aria-hidden="true" />
+
+            {/* Custom FPS Slider + Presets */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 px-2.5 py-1 bg-[#0D1017] border border-[#262C3B] rounded-md">
+                <span className="text-[11px] text-[#94A3B8] whitespace-nowrap">播放速度</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={30}
+                  step={1}
+                  value={fps}
+                  onChange={(e) => onChangeFps(Number(e.target.value))}
+                  className="w-24 studio-slider"
+                />
+                <span className="text-xs font-mono tabular-nums text-sky-300 w-12 text-right whitespace-nowrap">
+                  {fps} FPS
+                </span>
+              </div>
+
+              <div className="flex items-center bg-[#0D1017] border border-[#262C3B] rounded-md p-0.5">
+                {FPS_PRESETS.map((presetFps) => (
+                  <button
+                    key={presetFps}
+                    type="button"
+                    onClick={() => onChangeFps(presetFps)}
+                    className={`px-2 py-1 text-[11px] font-mono tabular-nums rounded transition-colors cursor-pointer ${
+                      fps === presetFps
+                        ? 'bg-[#262E40] text-sky-300 font-medium'
+                        : 'text-[#8B95A8] hover:text-[#E2E8F0]'
+                    }`}
+                  >
+                    {presetFps}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {activeFrameId && (
+            <button
+              type="button"
+              onClick={() => onEditFrame(activeFrameId)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5 text-sky-400" />
+              精修目前影格
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Phase 2 Pixel Editor Bar (visible in Edit Mode) */}
       {viewMode === 'edit' && sourceImage && result && (
         <PixelEditorBar
@@ -804,7 +941,7 @@ export function CanvasViewport({
         />
       )}
 
-      {/* Pending Reconversion Protection Notice (prevents accidental loss of manual pixel edits) */}
+      {/* Pending Reconversion Protection Notice */}
       {hasPendingReconvert && (
         <div className="px-4 py-2 bg-amber-500/12 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-100 shrink-0">
           <span>
@@ -829,6 +966,23 @@ export function CanvasViewport({
         </div>
       )}
 
+      {/* Single-Frame Hint inside Animate Mode */}
+      {viewMode === 'animate' && timelineFrames.length <= 1 && (
+        <div className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/25 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
+          <span className="inline-flex items-center gap-1.5">
+            <Film className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            目前僅有 1 張影格。請一次多選多張連續圖（例如 8 張動作序列），或點下方「追加影格」即可開始動畫播放。
+          </span>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-2.5 py-1 bg-sky-400 hover:bg-sky-300 text-[#081018] font-medium rounded transition-colors whitespace-nowrap cursor-pointer"
+          >
+            一次選取多張連續圖
+          </button>
+        </div>
+      )}
+
       {/* Main Canvas Stage */}
       <div
         ref={containerRef}
@@ -841,10 +995,10 @@ export function CanvasViewport({
           >
             <ImagePlus className="w-8 h-8 text-sky-400 mx-auto mb-3" />
             <p className="text-sm font-medium text-[#F1F5F9] mb-1">
-              點擊上傳或拖曳高解析 2D 圖片到這裡
+              點擊上傳單張或一次多選多張連續動畫圖
             </p>
             <p className="text-xs text-[#94A3B8]">
-              支援 PNG / JPG / WebP，也可以直接按 Ctrl+V 貼上剪貼簿圖片
+              支援 PNG / JPG / WebP，也可以拖曳整組連續圖或按 Ctrl+V 貼上
             </p>
           </div>
         ) : viewMode === 'crop' ? (
@@ -856,6 +1010,7 @@ export function CanvasViewport({
                 <strong className="font-mono text-sky-300">
                   {config.targetW}:{config.targetH}
                 </strong>
+                {timelineFrames.length > 1 ? '（將同步套用到全部影格）' : ''}
               </span>
               <button
                 type="button"
@@ -876,7 +1031,9 @@ export function CanvasViewport({
               </button>
               <button
                 type="button"
-                onClick={() => onChangeViewMode('side-by-side')}
+                onClick={() =>
+                  onChangeViewMode(timelineFrames.length > 1 ? 'animate' : 'side-by-side')
+                }
                 className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500 hover:bg-sky-400 text-[#090C10] font-medium rounded text-xs cursor-pointer"
               >
                 <CropIcon className="w-3 h-3" />
@@ -889,14 +1046,14 @@ export function CanvasViewport({
               className="relative inline-block border border-[#2D3546] shadow-2xl overflow-hidden bg-checkerboard"
               style={{
                 maxWidth: Math.min(availW, 760),
-                maxHeight: Math.min(availH - 48, 620),
+                maxHeight: Math.min(availH - 48, 600),
               }}
             >
               <img
                 src={sourceImage.src}
                 alt="原圖裁切檢視"
                 draggable={false}
-                className="block max-w-full max-h-[60vh] object-contain select-none"
+                className="block max-w-full max-h-[55vh] object-contain select-none"
                 referrerPolicy="no-referrer"
               />
 
@@ -956,10 +1113,13 @@ export function CanvasViewport({
             </div>
           </div>
         ) : viewMode === 'edit' ? (
-          /* Phase 2 Interactive Pixel Touch-Up & Background Removal Canvas */
+          /* Interactive Pixel Touch-Up & Background Removal Canvas */
           <div className="flex flex-col items-center gap-2">
             <div className="w-full flex items-center justify-between gap-4 text-xs text-[#94A3B8]">
               <span className="text-[#F1F5F9] font-medium">
+                {timelineFrames.length > 1
+                  ? `第 ${activeFrameIdx + 1} 格精修 · `
+                  : ''}
                 {editor.tool === 'pencil'
                   ? '畫筆精修（左鍵點塗 · 右鍵快速點格去背）'
                   : editor.tool === 'eraser'
@@ -997,7 +1157,6 @@ export function CanvasViewport({
                 />
               )}
 
-              {/* Pixel-Perfect Brush / Cell Highlight Cursor */}
               {brushPreviewRect && (
                 <div
                   className={`absolute pointer-events-none box-border border-2 ${
@@ -1011,6 +1170,32 @@ export function CanvasViewport({
                     width: Math.max(2, brushPreviewRect.width),
                     height: Math.max(2, brushPreviewRect.height),
                   }}
+                />
+              )}
+            </div>
+          </div>
+        ) : viewMode === 'animate' ? (
+          /* Animation Playback Stage */
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-full flex items-center justify-between gap-4 text-xs text-[#94A3B8]">
+              <span className="text-[#F1F5F9] font-medium truncate max-w-[260px]">
+                {isPlaying ? `播放中（${fps} FPS）` : '已暫停'} · {sourceName}
+              </span>
+              <span className="font-mono tabular-nums text-sky-300 shrink-0">
+                {config.targetW}×{config.targetH}
+              </span>
+            </div>
+            <div
+              className={`border border-[#262B38] overflow-hidden relative ${backdropClass}`}
+              style={{ width: dispW, height: dispH }}
+            >
+              <canvas ref={pixelCanvasRef} className="w-full h-full block pixelated" />
+              {showGrid && (
+                <PixelGridOverlay
+                  width={dispW}
+                  height={dispH}
+                  cols={config.targetW}
+                  rows={config.targetH}
                 />
               )}
             </div>
@@ -1133,12 +1318,12 @@ export function CanvasViewport({
           </div>
         )}
 
-        {/* Floating 1:1 Actual Size Preview Panel */}
+        {/* Floating 1:1 Actual Size Preview Panel (syncs live with animation playback too!) */}
         {sourceImage && result && viewMode !== 'crop' && (
           <div className="fixed md:absolute bottom-4 right-4 z-20 bg-[#12161F]/95 border border-[#262B38] rounded-md shadow-xl overflow-hidden">
             <div className="px-2.5 py-1.5 border-b border-[#222733] flex items-center justify-between gap-4">
               <span className="text-[11px] font-medium text-[#CBD5E1] whitespace-nowrap">
-                實際尺寸預覽
+                {viewMode === 'animate' && isPlaying ? `1:1 動態預覽 (${fps} FPS)` : '實際尺寸預覽'}
               </span>
               <button
                 type="button"
@@ -1183,17 +1368,31 @@ export function CanvasViewport({
         )}
       </div>
 
-      {/* Drag-and-Drop Visual Indicator */}
+      {/* Bottom Compact Frame Timeline Bar (when multi-frame or in Animate mode) */}
+      {showTimeline && (
+        <FrameTimelineBar
+          frames={timelineFrames}
+          activeFrameId={activeFrameId}
+          isPlaying={isPlaying}
+          onSelectFrame={onSelectFrame}
+          onEditFrame={onEditFrame}
+          onReorderFrames={onReorderFrames}
+          onDeleteFrame={onDeleteFrame}
+          onAppendFiles={(files) => onUploadFiles(files, 'append')}
+        />
+      )}
+
+      {/* Drag-and-Drop Overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-sky-500/10 border-2 border-dashed border-sky-400 flex items-center justify-center z-30 pointer-events-none">
           <div className="px-5 py-3 bg-[#0F1218] border border-sky-400/50 rounded-md text-sm font-medium text-sky-200 shadow-xl flex items-center gap-2">
             <Maximize2 className="w-4 h-4 text-sky-400" />
-            放開即可載入這張圖片進行像素轉換
+            放開即可載入單張圖片或整組連續動畫序列
           </div>
         </div>
       )}
 
-      {/* Contextual Bottom Hint & Live Pixel Coordinate Bar */}
+      {/* Bottom Contextual Hint & Live Pixel Coordinate Bar */}
       <div className="h-8 px-4 border-t border-[#1D212C] bg-[#0D1016] flex items-center justify-between gap-4 text-[11px] text-[#7A879C] shrink-0">
         {viewMode === 'edit' ? (
           <>
@@ -1226,9 +1425,14 @@ export function CanvasViewport({
               右鍵可直接點格去背 · Alt+點擊吸色
             </span>
           </>
+        ) : viewMode === 'animate' ? (
+          <>
+            <span>快捷鍵：Space 播放／暫停 · 左右方向鍵逐格切換 · 雙擊時間軸縮圖進入單格精修</span>
+            <span className="hidden sm:inline whitespace-nowrap">所有動畫合成與 GIF/ZIP 編碼皆於本地執行</span>
+          </>
         ) : (
           <>
-            <span>提示：可拖曳圖片或按 Ctrl+V 貼上，點上方「像素精修」即可逐格修圖與去背</span>
+            <span>提示：可一次拖曳多張連續圖自動建立動畫序列，或按 Ctrl+V 貼上圖片</span>
             <span className="hidden sm:inline whitespace-nowrap">所有影像運算皆於瀏覽器本地執行</span>
           </>
         )}

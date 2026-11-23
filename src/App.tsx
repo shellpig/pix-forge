@@ -1,19 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { PixelEditorState } from './components/PixelEditorBar';
-import { rgbToHex } from './lib/palettes';
+import { TimelineFramePreview } from './components/FrameTimelineBar';
 import {
   CropRect,
   DEFAULT_ENGINE_CONFIG,
   PixelEngineConfig,
   PixelEngineResult,
+  collectUsedPalette,
   computeCenteredAspectCrop,
   exportPixelPngBlob,
-  runPixelConversion,
+  runBatchPixelConversion,
 } from './lib/pixelEngine';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
+import {
+  exportAnimatedGifBlob,
+  exportFramesZipBlob,
+  exportSpriteSheetPngBlob,
+} from './lib/animationExport';
+
+interface AnimationFrameItem {
+  id: string;
+  name: string;
+  sourceImage: HTMLImageElement;
+  convertedResult: PixelEngineResult | null;
+  editHistory: ImageData[];
+  historyIndex: number;
+}
 
 const BUILTIN_SAMPLES = [
   {
@@ -38,48 +53,60 @@ const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
   { id: 'pixel', label: '僅看像素' },
   { id: 'crop', label: '範圍裁切' },
   { id: 'edit', label: '像素精修' },
+  { id: 'animate', label: '動畫播放' },
 ];
 
 const MAX_HISTORY = 40;
+const NATURAL_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-function extractPaletteFromImageData(data: Uint8ClampedArray): {
-  palette: string[];
-  uniqueColorCount: number;
-} {
-  const seen = new Map<number, number>();
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] === 0) continue;
-    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
-    seen.set(key, (seen.get(key) || 0) + 1);
+function makeFrameId(): string {
+  return `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function loadHtmlImageFromUrl(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('圖片載入失敗'));
+    img.src = url;
+  });
+}
+
+function getEffectiveFrameImageData(frame: AnimationFrameItem): ImageData | null {
+  const conv = frame.convertedResult;
+  if (!conv) return null;
+  if (
+    frame.historyIndex > 0 &&
+    frame.historyIndex < frame.editHistory.length &&
+    frame.editHistory[frame.historyIndex].width === conv.width &&
+    frame.editHistory[frame.historyIndex].height === conv.height
+  ) {
+    return frame.editHistory[frame.historyIndex];
   }
-  const entries = Array.from(seen.entries());
-  const limited =
-    entries.length > 64 ? entries.sort((a, b) => b[1] - a[1]).slice(0, 48) : entries;
-  const palette = limited
-    .map(([key]) => {
-      const r = (key >> 16) & 255;
-      const g = (key >> 8) & 255;
-      const b = key & 255;
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      return { hex: rgbToHex(r, g, b), lum };
-    })
-    .sort((a, b) => a.lum - b.lum)
-    .map((x) => x.hex);
+  return conv.imageData;
+}
 
-  return { palette, uniqueColorCount: seen.size };
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 export default function App() {
-  const [sourceImage, setSourceImage] = useState<HTMLImageElement | null>(null);
-  const [sourceName, setSourceName] = useState<string>('騎士立繪.jpg');
+  const [frames, setFrames] = useState<AnimationFrameItem[]>([]);
+  const [activeFrameId, setActiveFrameId] = useState<string | null>(null);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(BUILTIN_SAMPLES[0].id);
-  const [config, setConfig] = useState<PixelEngineConfig>(DEFAULT_ENGINE_CONFIG);
-  const [convertedResult, setConvertedResult] = useState<PixelEngineResult | null>(null);
 
-  // Phase 2 Editable Layer & Undo/Redo History
-  const [editHistory, setEditHistory] = useState<ImageData[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [config, setConfig] = useState<PixelEngineConfig>(DEFAULT_ENGINE_CONFIG);
   const [hasPendingReconvert, setHasPendingReconvert] = useState<boolean>(false);
+  const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [editor, setEditor] = useState<PixelEditorState>({
     tool: 'pencil',
@@ -92,188 +119,348 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [lockAspect, setLockAspect] = useState<boolean>(false);
   const [exportScale, setExportScale] = useState<number>(8);
+  const [spriteSheetCols, setSpriteSheetCols] = useState<number>(0); // 0 = single horizontal strip
+  const [fps, setFps] = useState<number>(8);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const hasManualEdits = historyIndex > 0 && editHistory.length > 0;
-  const activeEditedImageData =
-    hasManualEdits && historyIndex >= 0 && historyIndex < editHistory.length
-      ? editHistory[historyIndex]
-      : null;
+  // Track a stable key of source frame IDs + order so batch conversion triggers cleanly without loops
+  const sourceKey = useMemo(() => frames.map((f) => f.id).join('|'), [frames]);
+  const framesRef = useRef<AnimationFrameItem[]>(frames);
+  framesRef.current = frames;
 
-  // Unified active pixel result (seamlessly reflects manual edits across preview, 1:1, and export!)
+  const activeFrame = useMemo(() => {
+    if (frames.length === 0) return null;
+    return frames.find((f) => f.id === activeFrameId) || frames[0];
+  }, [frames, activeFrameId]);
+
+  const anyFrameHasManualEdits = useMemo(
+    () => frames.some((f) => f.historyIndex > 0 && f.editHistory.length > 0),
+    [frames]
+  );
+
+  const activeFrameHasManualEdits = Boolean(
+    activeFrame && activeFrame.historyIndex > 0 && activeFrame.editHistory.length > 0
+  );
+
+  // Unified PixelEngineResult for the active frame (reflects manual edits seamlessly)
   const activeResult: PixelEngineResult | null = useMemo(() => {
-    if (!convertedResult) return null;
-    if (
-      activeEditedImageData &&
-      activeEditedImageData.width === convertedResult.width &&
-      activeEditedImageData.height === convertedResult.height
-    ) {
-      const { palette, uniqueColorCount } = extractPaletteFromImageData(
-        activeEditedImageData.data
-      );
-      return {
-        imageData: activeEditedImageData,
-        width: activeEditedImageData.width,
-        height: activeEditedImageData.height,
-        palette,
-        uniqueColorCount,
-        computeMs: convertedResult.computeMs,
-      };
+    if (!activeFrame || !activeFrame.convertedResult) return null;
+    const effective = getEffectiveFrameImageData(activeFrame);
+    if (!effective) return null;
+    if (effective === activeFrame.convertedResult.imageData) {
+      return activeFrame.convertedResult;
     }
-    return convertedResult;
-  }, [convertedResult, activeEditedImageData]);
-
-  const clearManualEdits = useCallback(() => {
-    setEditHistory([]);
-    setHistoryIndex(-1);
-    setHasPendingReconvert(false);
-  }, []);
-
-  const loadImageUrl = useCallback(
-    (url: string, label: string, suggestedDims?: { w: number; h: number }) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        setErrorMsg(null);
-        clearManualEdits();
-        setSourceImage(img);
-        setSourceName(label);
-        setConfig((prev) => {
-          const nextW = suggestedDims ? suggestedDims.w : prev.targetW;
-          const nextH = suggestedDims ? suggestedDims.h : prev.targetH;
-          const crop = computeCenteredAspectCrop(img.naturalWidth, img.naturalHeight, nextW, nextH);
-          return { ...prev, targetW: nextW, targetH: nextH, crop };
-        });
-      };
-      img.onerror = () => {
-        setErrorMsg('圖片載入失敗，請確認檔案格式為 PNG / JPG / WebP。');
-      };
-      img.src = url;
-    },
-    [clearManualEdits]
-  );
-
-  // Load initial built-in sample
-  useEffect(() => {
-    const first = BUILTIN_SAMPLES[0];
-    loadImageUrl(first.src, '騎士立繪.jpg', { w: first.defaultW, h: first.defaultH });
-  }, [loadImageUrl]);
-
-  // Upload file handler (input, drag & drop, or Ctrl+V paste)
-  const handleUploadFile = useCallback(
-    (file: File) => {
-      const objectUrl = URL.createObjectURL(file);
-      setActiveSampleId(null);
-
-      const img = new Image();
-      img.onload = () => {
-        setErrorMsg(null);
-        clearManualEdits();
-        setSourceImage(img);
-        setSourceName(file.name || '剪貼簿圖片.png');
-
-        setConfig((prev) => {
-          const ratio = img.naturalWidth / img.naturalHeight;
-          let nextW = prev.targetW;
-          let nextH = prev.targetH;
-          if (Math.abs(ratio - 1) > 0.08) {
-            const base = Math.max(prev.targetW, prev.targetH);
-            if (ratio > 1) {
-              nextW = Math.min(256, Math.max(16, base));
-              nextH = Math.min(256, Math.max(8, Math.round(nextW / ratio)));
-            } else {
-              nextH = Math.min(256, Math.max(16, base));
-              nextW = Math.min(256, Math.max(8, Math.round(nextH * ratio)));
-            }
-          }
-          const crop = computeCenteredAspectCrop(img.naturalWidth, img.naturalHeight, nextW, nextH);
-          return { ...prev, targetW: nextW, targetH: nextH, crop };
-        });
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        setErrorMsg('無法讀取該圖片檔案，請改用 PNG / JPG / WebP 格式。');
-      };
-      img.src = objectUrl;
-    },
-    [clearManualEdits]
-  );
-
-  // Global Ctrl+V paste support
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
-          if (file) {
-            e.preventDefault();
-            handleUploadFile(file);
-            return;
-          }
-        }
-      }
+    const { swatches, totalUnique } = collectUsedPalette(effective.data);
+    return {
+      imageData: effective,
+      width: effective.width,
+      height: effective.height,
+      palette: swatches,
+      uniqueColorCount: totalUnique,
+      computeMs: activeFrame.convertedResult.computeMs,
     };
-    window.addEventListener('paste', onPaste);
-    return () => window.removeEventListener('paste', onPaste);
-  }, [handleUploadFile]);
+  }, [activeFrame]);
 
-  // Run pixel art conversion whenever image or config changes
+  const timelineFrames: TimelineFramePreview[] = useMemo(
+    () =>
+      frames.map((f) => ({
+        id: f.id,
+        name: f.name,
+        imageData: getEffectiveFrameImageData(f),
+        hasManualEdits: f.historyIndex > 0 && f.editHistory.length > 0,
+      })),
+    [frames]
+  );
+
+  // Run batch pixel conversion whenever source frames or config changes
   useEffect(() => {
-    if (!sourceImage) return;
+    const currentFrames = framesRef.current;
+    if (currentFrames.length === 0) return;
+
     let cancelled = false;
+    setIsBatchProcessing(currentFrames.length > 1);
+
     const rafId = window.requestAnimationFrame(() => {
       if (cancelled) return;
       try {
-        const res = runPixelConversion(sourceImage, config);
-        if (!cancelled) {
-          setConvertedResult(res);
-          setErrorMsg(null);
-        }
+        const imgs = currentFrames.map((f) => f.sourceImage);
+        const results = runBatchPixelConversion(imgs, config);
+        if (cancelled) return;
+
+        setFrames((prev) => {
+          const resultById = new Map<string, PixelEngineResult>();
+          currentFrames.forEach((f, idx) => {
+            if (results[idx]) resultById.set(f.id, results[idx]);
+          });
+          return prev.map((f) => {
+            const r = resultById.get(f.id);
+            return r ? { ...f, convertedResult: r } : f;
+          });
+        });
+        setErrorMsg(null);
       } catch (err) {
         if (!cancelled) {
-          setErrorMsg(err instanceof Error ? err.message : '轉換運算發生錯誤');
+          setErrorMsg(err instanceof Error ? err.message : '批次轉換運算發生錯誤');
         }
+      } finally {
+        if (!cancelled) setIsBatchProcessing(false);
       }
     });
+
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(rafId);
     };
-  }, [sourceImage, config]);
+  }, [sourceKey, config]);
 
-  // Commit a new edited pixel frame onto the Undo/Redo stack
+  // Animation playback loop (rAF with exact FPS delta accumulation)
+  useEffect(() => {
+    if (viewMode !== 'animate' || !isPlaying || frames.length < 2) return;
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let acc = 0;
+    const frameInterval = 1000 / Math.max(1, fps);
+
+    const tick = (now: number) => {
+      const dt = Math.min(250, now - lastTime);
+      lastTime = now;
+      acc += dt;
+
+      if (acc >= frameInterval) {
+        const steps = Math.floor(acc / frameInterval);
+        acc -= steps * frameInterval;
+        setActiveFrameId((prevId) => {
+          const curFrames = framesRef.current;
+          if (curFrames.length < 2) return prevId;
+          const idx = curFrames.findIndex((f) => f.id === prevId);
+          const nextIdx = ((idx >= 0 ? idx : 0) + steps) % curFrames.length;
+          return curFrames[nextIdx].id;
+        });
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [viewMode, isPlaying, fps, frames.length]);
+
+  // Automatically pause animation playback if leaving Animate mode
+  const handleChangeViewMode = useCallback((nextMode: ViewMode) => {
+    if (nextMode !== 'animate') {
+      setIsPlaying(false);
+    }
+    setViewMode(nextMode);
+  }, []);
+
+  const clearAllManualEdits = useCallback(() => {
+    setFrames((prev) => prev.map((f) => ({ ...f, editHistory: [], historyIndex: -1 })));
+    setHasPendingReconvert(false);
+  }, []);
+
+  const clearActiveFrameManualEdits = useCallback(() => {
+    if (!activeFrame) return;
+    setFrames((prev) =>
+      prev.map((f) => (f.id === activeFrame.id ? { ...f, editHistory: [], historyIndex: -1 } : f))
+    );
+    setHasPendingReconvert(false);
+  }, [activeFrame]);
+
+  // Load built-in single sample
+  const loadSample = useCallback(
+    async (sample: (typeof BUILTIN_SAMPLES)[number]) => {
+      try {
+        const img = await loadHtmlImageFromUrl(sample.src);
+        const id = makeFrameId();
+        setErrorMsg(null);
+        setActiveSampleId(sample.id);
+        setIsPlaying(false);
+        setHasPendingReconvert(false);
+        setSpriteSheetCols(0);
+        setFrames([
+          {
+            id,
+            name: `${sample.label.replace('範例：', '')}.jpg`,
+            sourceImage: img,
+            convertedResult: null,
+            editHistory: [],
+            historyIndex: -1,
+          },
+        ]);
+        setActiveFrameId(id);
+        setConfig((prev) => {
+          const crop = computeCenteredAspectCrop(
+            img.naturalWidth,
+            img.naturalHeight,
+            sample.defaultW,
+            sample.defaultH
+          );
+          return { ...prev, targetW: sample.defaultW, targetH: sample.defaultH, crop };
+        });
+      } catch {
+        setErrorMsg('範例圖片載入失敗。');
+      }
+    },
+    []
+  );
+
+  // Initial load
+  useEffect(() => {
+    loadSample(BUILTIN_SAMPLES[0]);
+  }, [loadSample]);
+
+  // Multi-file or single-file upload handler (with natural numeric filename sorting!)
+  const handleUploadFiles = useCallback(async (rawFiles: File[], mode: 'replace' | 'append') => {
+    const imageFiles = rawFiles
+      .filter((f) => f.type.startsWith('image/'))
+      .sort((a, b) => NATURAL_COLLATOR.compare(a.name, b.name));
+
+    if (imageFiles.length === 0) return;
+
+    try {
+      const loaded = await Promise.all(
+        imageFiles.map(async (file) => {
+          const url = URL.createObjectURL(file);
+          const img = await loadHtmlImageFromUrl(url);
+          return {
+            id: makeFrameId(),
+            name: file.name || '剪貼簿圖片.png',
+            sourceImage: img,
+            convertedResult: null,
+            editHistory: [] as ImageData[],
+            historyIndex: -1,
+          };
+        })
+      );
+
+      setErrorMsg(null);
+      setActiveSampleId(null);
+
+      if (mode === 'append' && framesRef.current.length > 0) {
+        setFrames((prev) => [...prev, ...loaded]);
+        setActiveFrameId(loaded[0].id);
+        if (framesRef.current.length + loaded.length > 1) {
+          setViewMode('animate');
+        }
+        return;
+      }
+
+      // Replace workspace with newly uploaded image(s)
+      const firstImg = loaded[0].sourceImage;
+      setHasPendingReconvert(false);
+      setSpriteSheetCols(0);
+      setFrames(loaded);
+      setActiveFrameId(loaded[0].id);
+
+      setConfig((prev) => {
+        const ratio = firstImg.naturalWidth / firstImg.naturalHeight;
+        let nextW = prev.targetW;
+        let nextH = prev.targetH;
+        if (Math.abs(ratio - 1) > 0.08) {
+          const base = Math.max(prev.targetW, prev.targetH);
+          if (ratio > 1) {
+            nextW = Math.min(256, Math.max(16, base));
+            nextH = Math.min(256, Math.max(8, Math.round(nextW / ratio)));
+          } else {
+            nextH = Math.min(256, Math.max(16, base));
+            nextW = Math.min(256, Math.max(8, Math.round(nextH * ratio)));
+          }
+        }
+        const crop = computeCenteredAspectCrop(
+          firstImg.naturalWidth,
+          firstImg.naturalHeight,
+          nextW,
+          nextH
+        );
+        return { ...prev, targetW: nextW, targetH: nextH, crop };
+      });
+
+      if (loaded.length > 1) {
+        setViewMode('animate');
+        setIsPlaying(true);
+      } else {
+        setIsPlaying(false);
+      }
+    } catch {
+      setErrorMsg('部分圖片無法讀取，請確認格式為 PNG / JPG / WebP。');
+    }
+  }, []);
+
+  // Global Ctrl+V clipboard paste support
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        handleUploadFiles(files, viewMode === 'animate' && framesRef.current.length > 0 ? 'append' : 'replace');
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [handleUploadFiles, viewMode]);
+
+  // Commit edited pixel frame onto the active frame's Undo/Redo stack
   const handleCommitImageData = useCallback(
     (next: ImageData) => {
-      if (!convertedResult) return;
+      if (!activeFrame || !activeFrame.convertedResult) return;
+      const targetId = activeFrame.id;
       setHasPendingReconvert(false);
-      setEditHistory((prev) => {
-        // Seed index 0 with the untouched automatic conversion so Ctrl+Z can revert all the way back!
-        const base =
-          prev.length === 0 || historyIndex < 0
-            ? [cloneImageData(convertedResult.imageData)]
-            : prev.slice(0, historyIndex + 1);
-        const appended = [...base, cloneImageData(next)];
-        if (appended.length > MAX_HISTORY) {
-          const trimmed = appended.slice(appended.length - MAX_HISTORY);
-          setHistoryIndex(trimmed.length - 1);
-          return trimmed;
-        }
-        setHistoryIndex(appended.length - 1);
-        return appended;
-      });
+
+      setFrames((prev) =>
+        prev.map((f) => {
+          if (f.id !== targetId || !f.convertedResult) return f;
+          const base =
+            f.editHistory.length === 0 || f.historyIndex < 0
+              ? [cloneImageData(f.convertedResult.imageData)]
+              : f.editHistory.slice(0, f.historyIndex + 1);
+          const appended = [...base, cloneImageData(next)];
+          const trimmed =
+            appended.length > MAX_HISTORY
+              ? appended.slice(appended.length - MAX_HISTORY)
+              : appended;
+          return {
+            ...f,
+            editHistory: trimmed,
+            historyIndex: trimmed.length - 1,
+          };
+        })
+      );
     },
-    [convertedResult, historyIndex]
+    [activeFrame]
   );
 
   const handleUndo = useCallback(() => {
-    setHistoryIndex((idx) => (idx > 0 ? idx - 1 : idx));
-  }, []);
+    if (!activeFrame) return;
+    const targetId = activeFrame.id;
+    setFrames((prev) =>
+      prev.map((f) =>
+        f.id === targetId && f.historyIndex > 0
+          ? { ...f, historyIndex: f.historyIndex - 1 }
+          : f
+      )
+    );
+  }, [activeFrame]);
 
   const handleRedo = useCallback(() => {
-    setHistoryIndex((idx) => (idx < editHistory.length - 1 ? idx + 1 : idx));
-  }, [editHistory.length]);
+    if (!activeFrame) return;
+    const targetId = activeFrame.id;
+    setFrames((prev) =>
+      prev.map((f) =>
+        f.id === targetId && f.historyIndex < f.editHistory.length - 1
+          ? { ...f, historyIndex: f.historyIndex + 1 }
+          : f
+      )
+    );
+  }, [activeFrame]);
 
   const handleAutoRemoveBg = useCallback(() => {
     if (!activeResult) return;
@@ -284,7 +471,63 @@ export default function App() {
     }
   }, [activeResult, editor.tolerance, handleCommitImageData]);
 
-  // Keyboard shortcuts for Edit Mode (B/E/I/G/W + Ctrl+Z / Ctrl+Y)
+  // Timeline actions
+  const handleStepFrame = useCallback((delta: -1 | 1) => {
+    setIsPlaying(false);
+    setActiveFrameId((prevId) => {
+      const cur = framesRef.current;
+      if (cur.length < 2) return prevId;
+      const idx = cur.findIndex((f) => f.id === prevId);
+      const nextIdx = ((idx >= 0 ? idx : 0) + delta + cur.length) % cur.length;
+      return cur[nextIdx].id;
+    });
+  }, []);
+
+  const handleSelectFrame = useCallback((id: string) => {
+    setIsPlaying(false);
+    setActiveFrameId(id);
+  }, []);
+
+  const handleEditFrame = useCallback((id: string) => {
+    setIsPlaying(false);
+    setActiveFrameId(id);
+    setViewMode('edit');
+  }, []);
+
+  const handleReorderFrames = useCallback((fromIndex: number, toIndex: number) => {
+    setFrames((prev) => {
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex >= prev.length ||
+        fromIndex === toIndex
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, []);
+
+  const handleDeleteFrame = useCallback((id: string) => {
+    setFrames((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((f) => f.id === id);
+      const next = prev.filter((f) => f.id !== id);
+      setActiveFrameId((curId) => {
+        if (curId !== id) return curId;
+        const fallbackIdx = Math.min(idx, next.length - 1);
+        return next[fallbackIdx]?.id ?? null;
+      });
+      if (next.length <= 1) setIsPlaying(false);
+      return next;
+    });
+  }, []);
+
+  // Keyboard shortcuts for Edit Mode & Animate Mode
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -297,7 +540,7 @@ export default function App() {
 
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') {
-        if (editHistory.length > 0) {
+        if (activeFrame && activeFrame.editHistory.length > 0) {
           e.preventDefault();
           if (e.shiftKey) handleRedo();
           else handleUndo();
@@ -305,11 +548,29 @@ export default function App() {
         return;
       }
       if (mod && e.key.toLowerCase() === 'y') {
-        if (editHistory.length > 0) {
+        if (activeFrame && activeFrame.editHistory.length > 0) {
           e.preventDefault();
           handleRedo();
         }
         return;
+      }
+
+      if (viewMode === 'animate' && !mod && !e.altKey) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (framesRef.current.length > 1) setIsPlaying((p) => !p);
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          handleStepFrame(-1);
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          handleStepFrame(1);
+          return;
+        }
       }
 
       if (viewMode !== 'edit' || mod || e.altKey) return;
@@ -322,77 +583,78 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewMode, editHistory.length, handleUndo, handleRedo]);
+  }, [viewMode, activeFrame, handleUndo, handleRedo, handleStepFrame]);
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
       setConfig((prev) => ({ ...prev, ...patch }));
-      if (hasManualEdits) {
+      if (anyFrameHasManualEdits) {
         setHasPendingReconvert(true);
       }
     },
-    [hasManualEdits]
+    [anyFrameHasManualEdits]
   );
 
   const handleSelectDimensions = useCallback(
     (w: number, h: number) => {
-      clearManualEdits();
+      clearAllManualEdits();
       setConfig((prev) => {
-        const crop = sourceImage
-          ? computeCenteredAspectCrop(sourceImage.naturalWidth, sourceImage.naturalHeight, w, h)
+        const refImg = framesRef.current[0]?.sourceImage;
+        const crop = refImg
+          ? computeCenteredAspectCrop(refImg.naturalWidth, refImg.naturalHeight, w, h)
           : prev.crop;
         return { ...prev, targetW: w, targetH: h, crop };
       });
     },
-    [sourceImage, clearManualEdits]
+    [clearAllManualEdits]
   );
 
   const handleChangeCrop = useCallback(
     (crop: CropRect) => {
-      clearManualEdits();
+      clearAllManualEdits();
       setConfig((prev) => ({ ...prev, crop }));
     },
-    [clearManualEdits]
+    [clearAllManualEdits]
   );
 
   const handleResetConfig = useCallback(() => {
-    clearManualEdits();
-    setConfig((prev) => ({
-      ...DEFAULT_ENGINE_CONFIG,
-      targetW: prev.targetW,
-      targetH: prev.targetH,
-      crop: sourceImage
-        ? computeCenteredAspectCrop(
-            sourceImage.naturalWidth,
-            sourceImage.naturalHeight,
-            prev.targetW,
-            prev.targetH
-          )
-        : DEFAULT_ENGINE_CONFIG.crop,
-    }));
-  }, [sourceImage, clearManualEdits]);
+    clearAllManualEdits();
+    setConfig((prev) => {
+      const refImg = framesRef.current[0]?.sourceImage;
+      return {
+        ...DEFAULT_ENGINE_CONFIG,
+        targetW: prev.targetW,
+        targetH: prev.targetH,
+        crop: refImg
+          ? computeCenteredAspectCrop(
+              refImg.naturalWidth,
+              refImg.naturalHeight,
+              prev.targetW,
+              prev.targetH
+            )
+          : DEFAULT_ENGINE_CONFIG.crop,
+      };
+    });
+  }, [clearAllManualEdits]);
 
   const handlePickColor = useCallback((hex: string) => {
     setEditor((prev) => ({ ...prev, colorHex: hex }));
   }, []);
 
+  // --- Export Handlers ---
   const handleDownloadPng = useCallback(async () => {
-    if (!activeResult) return;
+    if (!activeResult || !activeFrame) return;
     try {
       const blob = await exportPixelPngBlob(activeResult.imageData, exportScale);
-      const url = URL.createObjectURL(blob);
-      const baseName = sourceName.replace(/\.[^.]+$/, '');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${baseName}_${activeResult.width}x${activeResult.height}_${exportScale}x.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const baseName = activeFrame.name.replace(/\.[^.]+$/, '');
+      triggerBlobDownload(
+        blob,
+        `${baseName}_${activeResult.width}x${activeResult.height}_${exportScale}x.png`
+      );
     } catch {
       setErrorMsg('匯出 PNG 失敗，請再試一次。');
     }
-  }, [activeResult, exportScale, sourceName]);
+  }, [activeResult, activeFrame, exportScale]);
 
   const handleCopyPng = useCallback(async () => {
     if (!activeResult) return;
@@ -402,9 +664,84 @@ export default function App() {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       }
     } catch {
-      setErrorMsg('目前瀏覽器環境不允許直接寫入圖片到剪貼簿，請使用「下載 PNG」。');
+      setErrorMsg('目前瀏覽器環境不允許直接寫入圖片到剪貼簿，請使用下載按鈕。');
     }
   }, [activeResult, exportScale]);
+
+  const collectAllExportFrames = useCallback((): Array<{ name: string; imageData: ImageData }> => {
+    const out: Array<{ name: string; imageData: ImageData }> = [];
+    for (const f of frames) {
+      const img = getEffectiveFrameImageData(f);
+      if (img) out.push({ name: f.name, imageData: img });
+    }
+    return out;
+  }, [frames]);
+
+  const handleDownloadSpriteSheet = useCallback(async () => {
+    const ready = collectAllExportFrames();
+    if (ready.length === 0) return;
+    setIsExporting(true);
+    try {
+      const cols =
+        spriteSheetCols <= 0 || spriteSheetCols > ready.length ? ready.length : spriteSheetCols;
+      const blob = await exportSpriteSheetPngBlob(
+        ready.map((r) => r.imageData),
+        exportScale,
+        cols
+      );
+      const base = ready[0].name.replace(/\.[^.]+$/, '');
+      triggerBlobDownload(
+        blob,
+        `${base}_sheet_${ready.length}f_${config.targetW}x${config.targetH}_${exportScale}x.png`
+      );
+    } catch {
+      setErrorMsg('匯出 Sprite Sheet 失敗，請再試一次。');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [collectAllExportFrames, spriteSheetCols, exportScale, config.targetW, config.targetH]);
+
+  const handleDownloadGif = useCallback(async () => {
+    const ready = collectAllExportFrames();
+    if (ready.length === 0) return;
+    setIsExporting(true);
+    try {
+      const blob = exportAnimatedGifBlob(
+        ready.map((r) => r.imageData),
+        exportScale,
+        fps
+      );
+      const base = ready[0].name.replace(/\.[^.]+$/, '');
+      triggerBlobDownload(
+        blob,
+        `${base}_anim_${ready.length}f_${fps}fps_${exportScale}x.gif`
+      );
+    } catch {
+      setErrorMsg('匯出動態 GIF 失敗，請再試一次。');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [collectAllExportFrames, exportScale, fps]);
+
+  const handleDownloadZip = useCallback(async () => {
+    const ready = collectAllExportFrames();
+    if (ready.length === 0) return;
+    setIsExporting(true);
+    try {
+      const blob = await exportFramesZipBlob(ready, exportScale);
+      const base = ready[0].name.replace(/\.[^.]+$/, '');
+      triggerBlobDownload(
+        blob,
+        `${base}_frames_${ready.length}f_${config.targetW}x${config.targetH}_${exportScale}x.zip`
+      );
+    } catch {
+      setErrorMsg('打包 ZIP 失敗，請再試一次。');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [collectAllExportFrames, exportScale, config.targetW, config.targetH]);
+
+  const isMultiFrame = frames.length > 1;
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
@@ -415,7 +752,7 @@ export default function App() {
           PixForge
         </span>
 
-        {/* Zone 2: 5 Single-line Mode Links */}
+        {/* Zone 2: Concise Single-Line Mode Links */}
         <nav className="flex items-center gap-6 h-full overflow-x-auto">
           {VIEW_TABS.map((tab) => {
             const active = viewMode === tab.id;
@@ -423,15 +760,13 @@ export default function App() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setViewMode(tab.id)}
+                onClick={() => handleChangeViewMode(tab.id)}
                 className={`relative h-full inline-flex items-center text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   active ? 'text-[#F8FAFC] font-medium' : 'text-[#8B95A8] hover:text-[#E2E8F0]'
                 }`}
               >
                 {tab.label}
-                {active && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />
-                )}
+                {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />}
               </button>
             );
           })}
@@ -441,12 +776,12 @@ export default function App() {
         <div className="shrink-0">
           <button
             type="button"
-            disabled={!activeResult}
-            onClick={handleDownloadPng}
+            disabled={!activeResult || isExporting}
+            onClick={isMultiFrame && viewMode === 'animate' ? handleDownloadSpriteSheet : handleDownloadPng}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            下載 PNG
+            {isMultiFrame && viewMode === 'animate' ? '匯出 Sprite Sheet' : '下載 PNG'}
           </button>
         </div>
       </header>
@@ -468,61 +803,83 @@ export default function App() {
       {/* Main Studio Workspace */}
       <main className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-hidden">
         <CanvasViewport
-          sourceImage={sourceImage}
-          sourceName={sourceName}
+          sourceImage={activeFrame?.sourceImage ?? null}
+          sourceName={activeFrame?.name ?? ''}
           result={activeResult}
           config={config}
           viewMode={viewMode}
           editor={editor}
-          canUndo={historyIndex > 0}
-          canRedo={historyIndex >= 0 && historyIndex < editHistory.length - 1}
-          hasManualEdits={hasManualEdits}
-          editStepCount={Math.max(0, historyIndex)}
+          canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
+          canRedo={Boolean(
+            activeFrame &&
+              activeFrame.historyIndex >= 0 &&
+              activeFrame.historyIndex < activeFrame.editHistory.length - 1
+          )}
+          hasManualEdits={activeFrameHasManualEdits}
+          editStepCount={activeFrame ? Math.max(0, activeFrame.historyIndex) : 0}
           hasPendingReconvert={hasPendingReconvert}
+          isBatchProcessing={isBatchProcessing}
+          timelineFrames={timelineFrames}
+          activeFrameId={activeFrame?.id ?? null}
+          isPlaying={isPlaying}
+          fps={fps}
+          onTogglePlay={() => setIsPlaying((p) => !p)}
+          onStepFrame={handleStepFrame}
+          onChangeFps={setFps}
+          onSelectFrame={handleSelectFrame}
+          onEditFrame={handleEditFrame}
+          onReorderFrames={handleReorderFrames}
+          onDeleteFrame={handleDeleteFrame}
+          onUploadFiles={handleUploadFiles}
           onUpdateEditor={(patch) => setEditor((p) => ({ ...p, ...patch }))}
           onCommitImageData={handleCommitImageData}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onAutoRemoveBg={handleAutoRemoveBg}
-          onResetEdits={clearManualEdits}
-          onApplyPendingReconvert={clearManualEdits}
+          onResetEdits={clearActiveFrameManualEdits}
+          onApplyPendingReconvert={clearAllManualEdits}
           onDismissPendingReconvert={() => setHasPendingReconvert(false)}
           onChangeCrop={handleChangeCrop}
           onSelectDimensions={handleSelectDimensions}
-          onUploadFile={handleUploadFile}
           samples={BUILTIN_SAMPLES}
           activeSampleId={activeSampleId}
           onSelectSample={(s) => {
             const full = BUILTIN_SAMPLES.find((b) => b.id === s.id);
-            if (!full) return;
-            setActiveSampleId(full.id);
-            loadImageUrl(full.src, `${full.label.replace('範例：', '')}.jpg`, {
-              w: full.defaultW,
-              h: full.defaultH,
-            });
+            if (full) loadSample(full);
           }}
-          onChangeViewMode={setViewMode}
+          onChangeViewMode={handleChangeViewMode}
         />
 
         <ControlPanel
           config={config}
           result={activeResult}
           sourceSize={
-            sourceImage
-              ? { w: sourceImage.naturalWidth, h: sourceImage.naturalHeight }
+            activeFrame
+              ? {
+                  w: activeFrame.sourceImage.naturalWidth,
+                  h: activeFrame.sourceImage.naturalHeight,
+                }
               : null
           }
+          frameCount={frames.length}
+          fps={fps}
+          spriteSheetCols={spriteSheetCols}
+          isExporting={isExporting}
           lockAspect={lockAspect}
           exportScale={exportScale}
           onChangeExportScale={setExportScale}
+          onChangeSpriteSheetCols={setSpriteSheetCols}
           onToggleLockAspect={() => setLockAspect((v) => !v)}
           onUpdateConfig={handleUpdateConfig}
           onSelectDimensions={handleSelectDimensions}
           onResetConfig={handleResetConfig}
-          onOpenCropMode={() => setViewMode('crop')}
+          onOpenCropMode={() => handleChangeViewMode('crop')}
           onPickColor={handlePickColor}
           onDownloadPng={handleDownloadPng}
           onCopyPng={handleCopyPng}
+          onDownloadSpriteSheet={handleDownloadSpriteSheet}
+          onDownloadGif={handleDownloadGif}
+          onDownloadZip={handleDownloadZip}
         />
       </main>
     </div>

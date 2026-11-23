@@ -3,7 +3,6 @@ import {
   RGBColor,
   OKLabColor,
   hexToRgb,
-  oklabDistSq,
   oklabToRgb,
   rgbToHex,
   rgbToOklab,
@@ -26,11 +25,12 @@ export interface PixelEngineConfig {
   targetH: number;
   crop: CropRect;
   downscaleMode: DownscaleMode;
-  outlineStrength: number; // 0..100 (calibrated gentle accent, never floods face with black)
-  smoothness: number; // 0..100 (edge-preserving bilateral smoothing before downscale)
-  preSharpen: number; // 0..100 (subtle crispness)
+  outlineStrength: number; // 0..100
+  smoothness: number; // 0..100
+  preSharpen: number; // 0..100
   paletteMode: PaletteMode;
   autoColorCount: number; // 4..64
+  sharedSequencePalette: boolean; // Share one unified OKLab palette across all animation frames
   presetPaletteId: string;
   ditherMode: DitherMode;
   ditherStrength: number; // 0..100
@@ -58,6 +58,7 @@ export const DEFAULT_ENGINE_CONFIG: PixelEngineConfig = {
   preSharpen: 15,
   paletteMode: 'auto',
   autoColorCount: 32,
+  sharedSequencePalette: true,
   presetPaletteId: 'endesga32',
   ditherMode: 'none',
   ditherStrength: 40,
@@ -79,8 +80,6 @@ function clamp255(v: number): number {
 
 /**
  * Edge-preserving bilateral smoothing on the working buffer.
- * Melts dense micro-line aliasing (fine hair strands, armor engravings) into clean cel-shaded surfaces
- * while keeping strong edges (face silhouette, eyes, cape boundary) razor-sharp.
  */
 function applyBilateralSmooth(
   data: Uint8ClampedArray,
@@ -92,12 +91,10 @@ function applyBilateralSmooth(
   if (smoothnessPct <= 0) return;
 
   const strength = smoothnessPct / 100;
-  // Color range sigma: larger smoothness merges slightly wider shading steps without crossing dark outlines
   const sigmaColor = 18 + strength * 34;
   const invTwoSigmaColorSq = 1 / (2 * sigmaColor * sigmaColor);
   const passes = strength > 0.65 ? 2 : 1;
 
-  // Spatial weights for 3x3 neighborhood
   const spatialW = [0.55, 0.85, 0.55, 0.85, 1.0, 0.85, 0.55, 0.85, 0.55];
 
   let src = new Uint8ClampedArray(data);
@@ -165,7 +162,7 @@ function applyBilateralSmooth(
 }
 
 /**
- * Gentle unsharp mask on the working buffer for crisp edges without haloing
+ * Gentle unsharp mask on the working buffer
  */
 function applyPreSharpen(data: Uint8ClampedArray, w: number, h: number, strengthPct: number): void {
   if (strengthPct <= 0) return;
@@ -183,7 +180,6 @@ function applyPreSharpen(data: Uint8ClampedArray, w: number, h: number, strength
       for (let c = 0; c < 3; c++) {
         const blur = (copy[up + c] + copy[dn + c] + copy[lt + c] + copy[rt + c]) * 0.25;
         const diff = copy[i + c] - blur;
-        // Clamp overshoot so outlines never blow out
         const delta = Math.max(-42, Math.min(42, diff * amount * 2.0));
         data[i + c] = clamp255(Math.round(copy[i + c] + delta));
       }
@@ -192,9 +188,7 @@ function applyPreSharpen(data: Uint8ClampedArray, w: number, h: number, strength
 }
 
 /**
- * Gentle, luminance-only 3x3 contrast-aware outline preservation.
- * Unlike naive RGB erosion, this ONLY subtly deepens narrow high-contrast edges (radius = 1)
- * while preserving original hue/chroma so eyes, skin, and silver hair never turn muddy black.
+ * Gentle 3x3 contrast-aware outline preservation.
  */
 function applyGentleOutlinePreservation(
   data: Uint8ClampedArray,
@@ -204,7 +198,7 @@ function applyGentleOutlinePreservation(
   alphaThreshold: number
 ): void {
   if (strengthPct <= 0) return;
-  const strength = (strengthPct / 100) * 0.42; // Calibrated cap so outlines stay thin & clean
+  const strength = (strengthPct / 100) * 0.42;
   const n = w * h;
   const src = new Uint8ClampedArray(data);
   const lum = new Float32Array(n);
@@ -227,7 +221,6 @@ function applyGentleOutlinePreservation(
       let maxIdx = idx;
       let count = 0;
 
-      // 3x3 cross + diagonal neighborhood
       for (let dy = -1; dy <= 1; dy++) {
         const row = (y + dy) * w;
         for (let dx = -1; dx <= 1; dx++) {
@@ -249,7 +242,6 @@ function applyGentleOutlinePreservation(
 
       if (count < 4) continue;
       const range = maxL - minL;
-      // Only act on crisp edges, ignore soft shading gradients
       if (range < 55) continue;
 
       const meanL = sumL / count;
@@ -257,7 +249,6 @@ function applyGentleOutlinePreservation(
       const brightDist = maxL - meanL;
 
       if (darkDist > brightDist * 1.35 && lum[idx] > minL + 25) {
-        // Thin dark edge next to bright region
         const weight = Math.min(1, (darkDist - brightDist) / range) * strength;
         const mOff = minIdx * 4;
         const inv = 1 - weight;
@@ -265,7 +256,6 @@ function applyGentleOutlinePreservation(
         data[off + 1] = Math.round(src[off + 1] * inv + src[mOff + 1] * weight);
         data[off + 2] = Math.round(src[off + 2] * inv + src[mOff + 2] * weight);
       } else if (brightDist > darkDist * 1.45 && lum[idx] < maxL - 25) {
-        // Thin bright specular highlight (e.g. eye catchlight, gold glint)
         const weight = Math.min(1, (brightDist - darkDist) / range) * strength * 0.85;
         const mOff = maxIdx * 4;
         const inv = 1 - weight;
@@ -279,7 +269,6 @@ function applyGentleOutlinePreservation(
 
 /**
  * Downscale working buffer (targetW * P, targetH * P) to (targetW, targetH)
- * with clean pixel-art-preserving strategies.
  */
 function downscaleBuffer(
   workData: Uint8ClampedArray,
@@ -350,7 +339,6 @@ function downscaleBuffer(
       const avgG = sumG / count;
       const avgB = sumB / count;
 
-      // Mode 4: Smooth faithful Area downscale
       if (mode === 'area') {
         out[outOff] = Math.round(avgR);
         out[outOff + 1] = Math.round(avgG);
@@ -359,8 +347,6 @@ function downscaleBuffer(
         continue;
       }
 
-      // Mode 2: LAB-Separated Contrast-Aware Downscale (True PixelOE principle!)
-      // Preserves clean color (a, b) from smooth average while sharpening luminance (L) cleanly
       if (mode === 'pixeloe') {
         for (let i = 1; i < count; i++) {
           const key = order[i];
@@ -386,7 +372,6 @@ function downscaleBuffer(
         const brightGap = highLab.L - medLab.L;
         const lRange = highLab.L - lowLab.L;
 
-        // Keep smooth chroma from median/average blend so eyes and skin stay vivid & clean!
         const outA = avgLab.a * 0.55 + medLab.a * 0.45;
         const outB = avgLab.b * 0.55 + medLab.b * 0.45;
         let outL = medLab.L * 0.65 + avgLab.L * 0.35;
@@ -408,7 +393,6 @@ function downscaleBuffer(
         continue;
       }
 
-      // Compute 2-cluster K-Centroid on the patch (used by both 'k-centroid' and 'clean-sprite')
       let minIdx = 0;
       let maxIdx = 0;
       for (let k = 1; k < count; k++) {
@@ -482,23 +466,17 @@ function downscaleBuffer(
         continue;
       }
 
-      // Mode 1 (Default): 'clean-sprite' — Crisp Majority K-Centroid + Focal Chroma Protection
-      // Majority cluster wins (keeps skin/hair ultra clean with zero black mud),
-      // while blending gently with area average in low-contrast regions for smooth shading,
-      // and preserving vivid accent pixels (like emerald eyes or bright highlights) if they occupy >= 28% of the cell.
       const dr = r2 - r1;
       const dg = g2 - g1;
       const db = b2 - b1;
       const clusterSep = Math.sqrt(dr * dr * 0.3 + dg * dg * 0.59 + db * db * 0.11);
 
       if (clusterSep < 22) {
-        // Smooth region -> clean area average avoids noisy stepping on faces & sky
         out[outOff] = Math.round(avgR);
         out[outOff + 1] = Math.round(avgG);
         out[outOff + 2] = Math.round(avgB);
         out[outOff + 3] = 255;
       } else {
-        // Crisp boundary -> pick majority cluster centroid (with slight chroma protection for vivid focal colors like eyes)
         const lab1 = rgbToOklab(Math.round(r1), Math.round(g1), Math.round(b1));
         const lab2 = rgbToOklab(Math.round(r2), Math.round(g2), Math.round(b2));
         const chroma1 = Math.hypot(lab1.a, lab1.b);
@@ -507,7 +485,6 @@ function downscaleBuffer(
         const share1 = c1Count / count;
         const share2 = c2Count / count;
 
-        // Give vivid focal colors (e.g. bright emerald eyes, gold trim, ruby gems) a fair boost against gray/black borders
         const score1 = share1 + (chroma1 > 0.08 && share1 >= 0.28 ? chroma1 * 1.15 : 0);
         const score2 = share2 + (chroma2 > 0.08 && share2 >= 0.28 ? chroma2 * 1.15 : 0);
 
@@ -515,7 +492,6 @@ function downscaleBuffer(
         const winG = score1 >= score2 ? g1 : g2;
         const winB = score1 >= score2 ? b1 : b2;
 
-        // Crisp 80% K-Centroid + 20% Area blend keeps cel-art clarity without harsh stair-step jitter
         out[outOff] = Math.round(winR * 0.8 + avgR * 0.2);
         out[outOff + 1] = Math.round(winG * 0.8 + avgG * 0.2);
         out[outOff + 2] = Math.round(winB * 0.8 + avgB * 0.2);
@@ -567,17 +543,20 @@ function applyToneAdjustments(
 }
 
 /**
- * Chroma-Aware & Rare-Focal-Preserving OKLab Palette Extraction!
- * Uses deterministic farthest-point hybrid initialization + sub-linear frequency weighting + chroma boost
- * so small vivid details (like bright emerald eyes, lips, gems, lanterns) ALWAYS get their own palette colors
- * instead of being swallowed by large sky/background regions!
+ * Chroma-Aware & Rare-Focal-Preserving OKLab Palette Extraction across 1 or multiple buffers!
+ * When given all frames of an animation sequence, produces one unified palette so colors never flicker across frames.
  */
-function extractAutoPalette(data: Uint8ClampedArray, k: number): RGBColor[] {
+export function extractAutoPaletteFromBuffers(
+  buffers: Uint8ClampedArray[],
+  k: number
+): RGBColor[] {
   const freqMap = new Map<number, number>();
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] === 0) continue;
-    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
-    freqMap.set(key, (freqMap.get(key) || 0) + 1);
+  for (const data of buffers) {
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0) continue;
+      const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+      freqMap.set(key, (freqMap.get(key) || 0) + 1);
+    }
   }
 
   const uniqueCount = freqMap.size;
@@ -591,45 +570,45 @@ function extractAutoPalette(data: Uint8ClampedArray, k: number): RGBColor[] {
     return out;
   }
 
-  const ptsL = new Float32Array(uniqueCount);
-  const ptsA = new Float32Array(uniqueCount);
-  const ptsB = new Float32Array(uniqueCount);
-  const rawCounts = new Float32Array(uniqueCount);
-  const impWeights = new Float32Array(uniqueCount); // Sub-linear + chroma boosted weight
+  // Cap sample pool cleanly if huge multi-frame sequence (> 12,000 unique RGB colors)
+  let entries = Array.from(freqMap.entries());
+  if (entries.length > 8192) {
+    entries.sort((a, b) => b[1] - a[1]);
+    entries = entries.slice(0, 8192);
+  }
 
-  let idx = 0;
+  const n = entries.length;
+  const ptsL = new Float32Array(n);
+  const ptsA = new Float32Array(n);
+  const ptsB = new Float32Array(n);
+  const impWeights = new Float32Array(n);
+
   let maxCountIdx = 0;
   let maxCount = -1;
 
-  freqMap.forEach((count, key) => {
+  for (let idx = 0; idx < n; idx++) {
+    const [key, count] = entries[idx];
     const lab = rgbToOklab((key >> 16) & 255, (key >> 8) & 255, key & 255);
     const chroma = Math.hypot(lab.a, lab.b);
     ptsL[idx] = lab.L;
     ptsA[idx] = lab.a;
     ptsB[idx] = lab.b;
-    rawCounts[idx] = count;
-    // Sub-linear frequency prevents huge backgrounds from monopolizing all centroids,
-    // while chroma boost protects vivid small accents (emerald eyes, gold trim, glowing windows).
     impWeights[idx] = Math.pow(count, 0.42) * (1 + chroma * 6.5);
     if (count > maxCount) {
       maxCount = count;
       maxCountIdx = idx;
     }
-    idx++;
-  });
+  }
 
   const centL = new Float32Array(k);
   const centA = new Float32Array(k);
   const centB = new Float32Array(k);
 
-  // First centroid = most frequent color (deterministic!)
   centL[0] = ptsL[maxCountIdx];
   centA[0] = ptsA[maxCountIdx];
   centB[0] = ptsB[maxCountIdx];
 
-  // Deterministic Weighted Farthest-Point Initialization in OKLab
-  // Guarantees full hue coverage (including small bright green eyes or warm lamp glows!)
-  const minDistSq = new Float32Array(uniqueCount);
+  const minDistSq = new Float32Array(n);
   minDistSq.fill(Infinity);
 
   for (let c = 1; c < k; c++) {
@@ -640,11 +619,10 @@ function extractAutoPalette(data: Uint8ClampedArray, k: number): RGBColor[] {
     let bestIdx = 0;
     let bestScore = -1;
 
-    for (let i = 0; i < uniqueCount; i++) {
+    for (let i = 0; i < n; i++) {
       const dL = ptsL[i] - prevL;
       const da = ptsA[i] - prevA;
       const db = ptsB[i] - prevB;
-      // Slightly emphasize chroma difference (a, b) during palette discovery so distinct hues are never merged
       const d2 = dL * dL + (da * da + db * db) * 1.45;
       if (d2 < minDistSq[i]) minDistSq[i] = d2;
 
@@ -660,7 +638,6 @@ function extractAutoPalette(data: Uint8ClampedArray, k: number): RGBColor[] {
     centB[c] = ptsB[bestIdx];
   }
 
-  // Refine centroids with 10 iterations of Importance-Weighted OKLab K-Means
   const sumL = new Float32Array(k);
   const sumA = new Float32Array(k);
   const sumB = new Float32Array(k);
@@ -672,7 +649,7 @@ function extractAutoPalette(data: Uint8ClampedArray, k: number): RGBColor[] {
     sumB.fill(0);
     sumW.fill(0);
 
-    for (let i = 0; i < uniqueCount; i++) {
+    for (let i = 0; i < n; i++) {
       const l = ptsL[i];
       const a = ptsA[i];
       const b = ptsB[i];
@@ -815,7 +792,10 @@ function quantizeWithPalette(
 /**
  * Collect unique palette colors used in the final pixel art, sorted perceptually by luminance
  */
-function collectUsedPalette(data: Uint8ClampedArray): { swatches: string[]; totalUnique: number } {
+export function collectUsedPalette(data: Uint8ClampedArray): {
+  swatches: string[];
+  totalUnique: number;
+} {
   const seen = new Map<number, number>();
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] === 0) continue;
@@ -844,9 +824,9 @@ function collectUsedPalette(data: Uint8ClampedArray): { swatches: string[]; tota
 }
 
 /**
- * Core processing function on raw RGBA working buffer (also directly testable outside DOM)
+ * Stage 1: Preprocess, downscale, and tone-adjust a raw working buffer WITHOUT palette quantization
  */
-export function processWorkingBuffer(
+function downscaleWorkingBufferPreQuant(
   workData: Uint8ClampedArray,
   workW: number,
   workH: number,
@@ -854,18 +834,15 @@ export function processWorkingBuffer(
   targetH: number,
   patchSize: number,
   config: PixelEngineConfig
-): { data: Uint8ClampedArray; palette: string[]; uniqueColorCount: number } {
-  // Step 1: Edge-preserving bilateral pre-smoothing (cleans dense 2D hair/linework noise)
+): Uint8ClampedArray {
   if (config.smoothness > 0) {
     applyBilateralSmooth(workData, workW, workH, config.smoothness, config.alphaThreshold);
   }
 
-  // Step 2: Subtle pre-sharpen for clean cel-shaded boundaries
   if (config.preSharpen > 0) {
     applyPreSharpen(workData, workW, workH, config.preSharpen);
   }
 
-  // Step 3: Gentle 3x3 contrast-aware outline preservation (only where needed, never floods face with black!)
   if (config.outlineStrength > 0 && config.downscaleMode !== 'area') {
     applyGentleOutlinePreservation(
       workData,
@@ -876,7 +853,6 @@ export function processWorkingBuffer(
     );
   }
 
-  // Step 4: Crisp Pixel-Art Downscaling
   const pixelBytes = downscaleBuffer(
     workData,
     workW,
@@ -888,13 +864,35 @@ export function processWorkingBuffer(
     config.alphaThreshold
   );
 
-  // Step 5: Tone Adjustments (Contrast / Saturation)
   applyToneAdjustments(pixelBytes, config.contrast, config.saturation);
+  return pixelBytes;
+}
 
-  // Step 6: Chroma-Preserving OKLab Palette Quantization & Dithering
+/**
+ * Core processing function on raw RGBA working buffer (also directly testable outside DOM)
+ */
+export function processWorkingBuffer(
+  workData: Uint8ClampedArray,
+  workW: number,
+  workH: number,
+  targetW: number,
+  targetH: number,
+  patchSize: number,
+  config: PixelEngineConfig
+): { data: Uint8ClampedArray; palette: string[]; uniqueColorCount: number } {
+  const pixelBytes = downscaleWorkingBufferPreQuant(
+    workData,
+    workW,
+    workH,
+    targetW,
+    targetH,
+    patchSize,
+    config
+  );
+
   if (config.paletteMode === 'auto') {
     const k = Math.max(2, Math.min(64, Math.round(config.autoColorCount)));
-    const autoPalette = extractAutoPalette(pixelBytes, k);
+    const autoPalette = extractAutoPaletteFromBuffers([pixelBytes], k);
     quantizeWithPalette(pixelBytes, targetW, targetH, autoPalette, config.ditherMode, config.ditherStrength);
   } else if (config.paletteMode === 'preset') {
     const preset = PRESET_PALETTES.find((p) => p.id === config.presetPaletteId) || PRESET_PALETTES[0];
@@ -908,8 +906,6 @@ export function processWorkingBuffer(
 
 /**
  * Multi-step high-quality canvas resample helper.
- * Halves resolution progressively before landing on (workW, workH) to prevent aliasing moiré
- * when shrinking very high-res artwork (e.g. 2048px -> 256px).
  */
 function resampleToWorkingBuffer(
   sourceImage: HTMLImageElement,
@@ -920,12 +916,10 @@ function resampleToWorkingBuffer(
   workW: number,
   workH: number
 ): ImageData {
-  // Progressive downsampling when source is > 2.5x larger than working buffer eliminates harsh aliasing!
   let curCanvas = document.createElement('canvas');
   let curW = Math.max(workW, Math.round(sw));
   let curH = Math.max(workH, Math.round(sh));
 
-  // Initial step: cap at 2x working size if huge
   if (curW > workW * 2 || curH > workH * 2) {
     const stepW = Math.max(workW * 2, Math.round(curW * 0.5));
     const stepH = Math.max(workH * 2, Math.round(curH * 0.5));
@@ -978,50 +972,118 @@ function resampleToWorkingBuffer(
 }
 
 /**
- * Main High-Res 2D Image -> Pixel Art Conversion Pipeline
+ * Batch High-Res 2D Sequence -> Pixel Art Conversion Pipeline.
+ * When sharedSequencePalette is enabled in 'auto' mode, extracts ONE unified OKLab palette
+ * across all frames so sprites never flicker during animation playback.
  */
-export function runPixelConversion(
-  sourceImage: HTMLImageElement,
+export function runBatchPixelConversion(
+  sourceImages: HTMLImageElement[],
   config: PixelEngineConfig
-): PixelEngineResult {
+): PixelEngineResult[] {
+  if (sourceImages.length === 0) return [];
   const t0 = performance.now();
 
   const targetW = Math.max(8, Math.min(256, Math.round(config.targetW)));
   const targetH = Math.max(8, Math.min(256, Math.round(config.targetH)));
   const maxDim = Math.max(targetW, targetH);
 
-  // Calibrated 4x oversampling keeps patches clean, fast, and avoids over-bloating 1px linework
   const patchSize = maxDim <= 96 ? 4 : 3;
   const workW = targetW * patchSize;
   const workH = targetH * patchSize;
 
-  const sx = Math.max(0, Math.min(1, config.crop.x)) * sourceImage.naturalWidth;
-  const sy = Math.max(0, Math.min(1, config.crop.y)) * sourceImage.naturalHeight;
-  const sw = Math.max(1, Math.min(sourceImage.naturalWidth - sx, config.crop.w * sourceImage.naturalWidth));
-  const sh = Math.max(1, Math.min(sourceImage.naturalHeight - sy, config.crop.h * sourceImage.naturalHeight));
+  // Stage 1: Preprocess & downscale every frame
+  const preQuantBuffers: Uint8ClampedArray[] = sourceImages.map((sourceImage) => {
+    const sx = Math.max(0, Math.min(1, config.crop.x)) * sourceImage.naturalWidth;
+    const sy = Math.max(0, Math.min(1, config.crop.y)) * sourceImage.naturalHeight;
+    const sw = Math.max(
+      1,
+      Math.min(sourceImage.naturalWidth - sx, config.crop.w * sourceImage.naturalWidth)
+    );
+    const sh = Math.max(
+      1,
+      Math.min(sourceImage.naturalHeight - sy, config.crop.h * sourceImage.naturalHeight)
+    );
 
-  const workImg = resampleToWorkingBuffer(sourceImage, sx, sy, sw, sh, workW, workH);
-  const { data, palette, uniqueColorCount } = processWorkingBuffer(
-    workImg.data,
-    workW,
-    workH,
-    targetW,
-    targetH,
-    patchSize,
-    config
-  );
+    const workImg = resampleToWorkingBuffer(sourceImage, sx, sy, sw, sh, workW, workH);
+    return downscaleWorkingBufferPreQuant(
+      workImg.data,
+      workW,
+      workH,
+      targetW,
+      targetH,
+      patchSize,
+      config
+    );
+  });
 
-  const outImageData = new ImageData(new Uint8ClampedArray(data), targetW, targetH);
-  const computeMs = Math.round(performance.now() - t0);
+  // Stage 2: Shared or Per-Frame Palette Quantization & Dithering
+  if (config.paletteMode === 'auto') {
+    const k = Math.max(2, Math.min(64, Math.round(config.autoColorCount)));
+    if (config.sharedSequencePalette && preQuantBuffers.length > 1) {
+      const sharedPalette = extractAutoPaletteFromBuffers(preQuantBuffers, k);
+      for (const buf of preQuantBuffers) {
+        quantizeWithPalette(
+          buf,
+          targetW,
+          targetH,
+          sharedPalette,
+          config.ditherMode,
+          config.ditherStrength
+        );
+      }
+    } else {
+      for (const buf of preQuantBuffers) {
+        const framePalette = extractAutoPaletteFromBuffers([buf], k);
+        quantizeWithPalette(
+          buf,
+          targetW,
+          targetH,
+          framePalette,
+          config.ditherMode,
+          config.ditherStrength
+        );
+      }
+    }
+  } else if (config.paletteMode === 'preset') {
+    const preset =
+      PRESET_PALETTES.find((p) => p.id === config.presetPaletteId) || PRESET_PALETTES[0];
+    const presetRgb = preset.colors.map(hexToRgb);
+    for (const buf of preQuantBuffers) {
+      quantizeWithPalette(
+        buf,
+        targetW,
+        targetH,
+        presetRgb,
+        config.ditherMode,
+        config.ditherStrength
+      );
+    }
+  }
 
-  return {
-    imageData: outImageData,
-    width: targetW,
-    height: targetH,
-    palette,
-    uniqueColorCount,
-    computeMs,
-  };
+  const totalMs = Math.round(performance.now() - t0);
+
+  return preQuantBuffers.map((buf) => {
+    const outImageData = new ImageData(new Uint8ClampedArray(buf), targetW, targetH);
+    const { swatches, totalUnique } = collectUsedPalette(outImageData.data);
+    return {
+      imageData: outImageData,
+      width: targetW,
+      height: targetH,
+      palette: swatches,
+      uniqueColorCount: totalUnique,
+      computeMs: totalMs,
+    };
+  });
+}
+
+/**
+ * Single-Image convenience wrapper
+ */
+export function runPixelConversion(
+  sourceImage: HTMLImageElement,
+  config: PixelEngineConfig
+): PixelEngineResult {
+  return runBatchPixelConversion([sourceImage], config)[0];
 }
 
 /**
