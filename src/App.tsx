@@ -16,6 +16,11 @@ import {
 } from './lib/pixelEngine';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
+  appendFrameEdit,
+  applyFrameConversion,
+  getEffectiveFrameImageData,
+} from './lib/frameHistory';
+import {
   exportAnimatedGifBlob,
   exportFramesZipBlob,
   exportSpriteSheetPngBlob,
@@ -75,20 +80,6 @@ function loadHtmlImageFromUrl(url: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error('圖片載入失敗'));
     img.src = url;
   });
-}
-
-function getEffectiveFrameImageData(frame: AnimationFrameItem): ImageData | null {
-  const conv = frame.convertedResult;
-  if (!conv) return null;
-  if (
-    frame.historyIndex > 0 &&
-    frame.historyIndex < frame.editHistory.length &&
-    frame.editHistory[frame.historyIndex].width === conv.width &&
-    frame.editHistory[frame.historyIndex].height === conv.height
-  ) {
-    return frame.editHistory[frame.historyIndex];
-  }
-  return conv.imageData;
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
@@ -201,7 +192,7 @@ export default function App() {
       setFrames((prev) =>
         prev.map((frame) => {
           const result = resultById.get(frame.id);
-          return result ? { ...frame, convertedResult: result } : frame;
+          return result ? applyFrameConversion(frame, result) : frame;
         })
       );
       setErrorMsg(null);
@@ -395,7 +386,14 @@ export default function App() {
       const loaded = await Promise.all(
         imageFiles.map(async (file) => {
           const url = URL.createObjectURL(file);
-          const img = await loadHtmlImageFromUrl(url);
+          let img: HTMLImageElement;
+          try {
+            img = await loadHtmlImageFromUrl(url);
+          } finally {
+            // Release the temporary blob URL on both success and failure.
+            // The loaded HTMLImageElement retains its decoded image.
+            URL.revokeObjectURL(url);
+          }
           return {
             id: makeFrameId(),
             name: file.name || '剪貼簿圖片.png',
@@ -496,20 +494,7 @@ export default function App() {
       setFrames((prev) =>
         prev.map((f) => {
           if (f.id !== targetId || !f.convertedResult) return f;
-          const base =
-            f.editHistory.length === 0 || f.historyIndex < 0
-              ? [cloneImageData(f.convertedResult.imageData)]
-              : f.editHistory.slice(0, f.historyIndex + 1);
-          const appended = [...base, cloneImageData(next)];
-          const trimmed =
-            appended.length > MAX_HISTORY
-              ? appended.slice(appended.length - MAX_HISTORY)
-              : appended;
-          return {
-            ...f,
-            editHistory: trimmed,
-            historyIndex: trimmed.length - 1,
-          };
+          return appendFrameEdit(f, next, MAX_HISTORY);
         })
       );
     },
