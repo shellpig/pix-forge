@@ -238,11 +238,13 @@ export function CanvasViewport({
     active: boolean;
     startX: number;
     startY: number;
-    startScrollLeft: number;
-    startScrollTop: number;
-  }>({ active: false, startX: 0, startY: 0, startScrollLeft: 0, startScrollTop: 0 });
+    startPanX: number;
+    startPanY: number;
+  }>({ active: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
 
   const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [hasEnteredEditOnce, setHasEnteredEditOnce] = useState<boolean>(false);
   const [backdrop, setBackdrop] = useState<BackdropMode>('checker');
@@ -306,6 +308,19 @@ export function CanvasViewport({
     }
   }, [viewMode, hasEnteredEditOnce]);
 
+  // Reset zoom and pan back to default fit whenever switching tabs/modes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsPanning(false);
+    panDragRef.current.active = false;
+    pendingWheelAnchorRef.current = null;
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = 0;
+      containerRef.current.scrollTop = 0;
+    }
+  }, [viewMode]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -357,22 +372,40 @@ export function CanvasViewport({
     return () => el.removeEventListener('wheel', handleWheel);
   }, [viewMode, sourceImage]);
 
+  const clampPan = (x: number, y: number) => {
+    const maxX = Math.max(120, Math.round((dispW + viewportSize.w) / 2) - 64);
+    const maxY = Math.max(120, Math.round((dispH + viewportSize.h) / 2) - 64);
+    return {
+      x: Math.max(-maxX, Math.min(maxX, x)),
+      y: Math.max(-maxY, Math.min(maxY, y)),
+    };
+  };
+
   useLayoutEffect(() => {
     const anchor = pendingWheelAnchorRef.current;
     if (!anchor) return;
     pendingWheelAnchorRef.current = null;
 
-    const container = containerRef.current;
     const canvasBox = editCanvasBoxRef.current;
-    if (!container || !canvasBox) return;
+    if (!canvasBox) return;
 
     const nextRect = canvasBox.getBoundingClientRect();
     const targetScreenX = nextRect.left + anchor.ratioX * nextRect.width;
     const targetScreenY = nextRect.top + anchor.ratioY * nextRect.height;
+    const dx = anchor.clientX - targetScreenX;
+    const dy = anchor.clientY - targetScreenY;
 
-    container.scrollLeft += targetScreenX - anchor.clientX;
-    container.scrollTop += targetScreenY - anchor.clientY;
+    if (Math.abs(dx) > 0.25 || Math.abs(dy) > 0.25) {
+      setPan((prev) => clampPan(prev.x + dx, prev.y + dy));
+    }
   }, [zoom]);
+
+  const handleStageMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Prevent Windows/Chrome native middle-click autoscroll from hijacking 2D panning
+    if (viewMode === 'edit' && e.button === 1) {
+      e.preventDefault();
+    }
+  };
 
   const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (viewMode !== 'edit' || e.button !== 1) return;
@@ -383,23 +416,24 @@ export function CanvasViewport({
       active: true,
       startX: e.clientX,
       startY: e.clientY,
-      startScrollLeft: el.scrollLeft,
-      startScrollTop: el.scrollTop,
+      startPanX: pan.x,
+      startPanY: pan.y,
     };
+    setIsPanning(true);
     el.setPointerCapture(e.pointerId);
   };
 
   const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!panDragRef.current.active) return;
-    const el = containerRef.current;
-    if (!el) return;
-    el.scrollLeft = panDragRef.current.startScrollLeft - (e.clientX - panDragRef.current.startX);
-    el.scrollTop = panDragRef.current.startScrollTop - (e.clientY - panDragRef.current.startY);
+    const nextX = panDragRef.current.startPanX + (e.clientX - panDragRef.current.startX);
+    const nextY = panDragRef.current.startPanY + (e.clientY - panDragRef.current.startY);
+    setPan(clampPan(nextX, nextY));
   };
 
   const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!panDragRef.current.active) return;
     panDragRef.current.active = false;
+    setIsPanning(false);
     const el = containerRef.current;
     if (el && el.hasPointerCapture(e.pointerId)) {
       el.releasePointerCapture(e.pointerId);
@@ -995,7 +1029,10 @@ export function CanvasViewport({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setZoom(1)}
+                  onClick={() => {
+                    setZoom(1);
+                    setPan({ x: 0, y: 0 });
+                  }}
                   title={t('toolbar.zoomResetTitle')}
                   className="px-1 text-[11px] font-mono tabular-nums text-[#CBD5E1] hover:text-sky-300 cursor-pointer"
                 >
@@ -1070,13 +1107,25 @@ export function CanvasViewport({
       <div className="flex-1 min-h-0 relative flex flex-col">
         <div
           ref={containerRef}
+          onMouseDown={handleStageMouseDown}
           onPointerDown={handleStagePointerDown}
           onPointerMove={handleStagePointerMove}
           onPointerUp={handleStagePointerUp}
           onPointerCancel={handleStagePointerUp}
-          className="flex-1 min-h-0 overflow-auto studio-scroll flex p-3 sm:p-4"
+          className={`flex-1 min-h-0 flex p-3 sm:p-4 ${
+            viewMode === 'edit'
+              ? `overflow-hidden ${isPanning ? 'cursor-grabbing' : ''}`
+              : 'overflow-auto studio-scroll'
+          }`}
         >
-          <div className="m-auto shrink-0">
+          <div
+            className="m-auto shrink-0"
+            style={
+              viewMode === 'edit'
+                ? { transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` }
+                : undefined
+            }
+          >
         {!sourceImage ? (
           <div
             onClick={() => fileInputRef.current?.click()}
