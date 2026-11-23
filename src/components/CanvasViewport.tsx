@@ -15,6 +15,8 @@ import {
   SkipBack,
   SkipForward,
   Pencil,
+  Keyboard,
+  X,
 } from 'lucide-react';
 import { hexToRgb, rgbToHex } from '../lib/palettes';
 import {
@@ -228,6 +230,7 @@ export function CanvasViewport({
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showRealSize, setShowRealSize] = useState<boolean>(true);
+  const [showShortcutHelp, setShowShortcutHelp] = useState<boolean>(false);
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 800, h: 520 });
 
   const workingImgRef = useRef<ImageData | null>(null);
@@ -851,6 +854,16 @@ export function CanvasViewport({
               </div>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => setShowShortcutHelp((value) => !value)}
+            title="查看操作快捷鍵"
+            aria-label="查看操作快捷鍵"
+            aria-expanded={showShortcutHelp}
+            className="shrink-0 p-1 text-[#94A3B8] hover:text-sky-300 bg-[#161A23] border border-[#2D3546] rounded cursor-pointer"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -1231,6 +1244,47 @@ export function CanvasViewport({
           </div>
         )}
 
+        {/* Compact coordinate readout replaces the fixed 32px bottom bar. */}
+        {viewMode === 'edit' && hoverPixel && (
+          <div className="absolute bottom-2 left-2 z-20 pointer-events-none flex items-center gap-2 px-2 py-1 bg-[#0D1016]/95 border border-[#2D3546] rounded text-[11px] font-mono tabular-nums text-[#CBD5E1]">
+            <span>X:{hoverPixel.x} Y:{hoverPixel.y}</span>
+            {hoverPixel.isTransparent ? (
+              <span className="text-[#94A3B8]">透明像素</span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="w-2.5 h-2.5 rounded-[1px] border border-white/25"
+                  style={{ backgroundColor: hoverPixel.hex || '#000' }}
+                />
+                {hoverPixel.hex}
+              </span>
+            )}
+          </div>
+        )}
+
+        {showShortcutHelp && (
+          <div role="dialog" aria-label="操作快捷鍵說明" className="absolute right-3 top-3 z-40 max-w-[min(360px,calc(100%-24px))] p-3 bg-[#151B26] border border-[#364056] shadow-xl rounded-md text-xs text-[#CBD5E1]">
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <span className="font-semibold text-[#F1F5F9]">操作快捷鍵</span>
+              <button
+                type="button"
+                onClick={() => setShowShortcutHelp(false)}
+                aria-label="關閉快捷鍵說明"
+                className="text-[#94A3B8] hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="leading-relaxed">Ctrl+V：貼上圖片。可拖曳多張圖建立動畫序列。</p>
+            {viewMode === 'animate' && (
+              <p className="mt-1.5 leading-relaxed">Space：播放／暫停；←／→：切換影格；雙擊縮圖：精修影格。</p>
+            )}
+            {viewMode === 'edit' && (
+              <p className="mt-1.5 leading-relaxed">B：畫筆；E：橡皮擦；I：滴管；G：油漆桶；W：魔術棒；Ctrl+Z：復原；Ctrl+Y：重做；右鍵：去背；Alt+點擊：吸色。</p>
+            )}
+          </div>
+        )}
+
         {/* Floating 1:1 Actual Size Preview Panel (syncs live with animation playback too!) */}
         {sourceImage && result && viewMode !== 'crop' && (
           <div className="fixed md:absolute bottom-4 right-4 z-20 bg-[#12161F]/95 border border-[#262B38] rounded-md shadow-xl overflow-hidden">
@@ -1305,51 +1359,6 @@ export function CanvasViewport({
         </div>
       )}
 
-      {/* Bottom Contextual Hint & Live Pixel Coordinate Bar */}
-      <div className="h-8 px-4 border-t border-[#1D212C] bg-[#0D1016] flex items-center justify-between gap-4 text-[11px] text-[#7A879C] shrink-0">
-        {viewMode === 'edit' ? (
-          <>
-            <div className="flex items-center gap-3 font-mono tabular-nums">
-              {hoverPixel ? (
-                <>
-                  <span className="text-[#CBD5E1]">
-                    X:{hoverPixel.x} Y:{hoverPixel.y}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  {hoverPixel.isTransparent ? (
-                    <span className="text-[#94A3B8]">透明像素</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-[#CBD5E1]">
-                      <span
-                        className="w-2.5 h-2.5 rounded-[1px] border border-white/25 inline-block"
-                        style={{ backgroundColor: hoverPixel.hex || '#000' }}
-                      />
-                      {hoverPixel.hex}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="font-sans">
-                  快捷鍵：B 畫筆 · E 橡皮擦去背 · I 滴管 · G 油漆桶 · W 魔術棒 · Ctrl+Z 復原
-                </span>
-              )}
-            </div>
-            <span className="hidden sm:inline whitespace-nowrap">
-              右鍵可直接點格去背 · Alt+點擊吸色
-            </span>
-          </>
-        ) : viewMode === 'animate' ? (
-          <>
-            <span>快捷鍵：Space 播放／暫停 · 左右方向鍵逐格切換 · 雙擊時間軸縮圖進入單格精修</span>
-            <span className="hidden sm:inline whitespace-nowrap">所有動畫合成與 GIF/ZIP 編碼皆於本地執行</span>
-          </>
-        ) : (
-          <>
-            <span>提示：可一次拖曳多張連續圖自動建立動畫序列，或按 Ctrl+V 貼上圖片</span>
-            <span className="hidden sm:inline whitespace-nowrap">所有影像運算皆於瀏覽器本地執行</span>
-          </>
-        )}
-      </div>
     </div>
   );
 }
