@@ -1,8 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Globe } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { PixelEditorState } from './components/PixelEditorBar';
 import { TimelineFramePreview } from './components/FrameTimelineBar';
+import {
+  LOCALE_OPTIONS,
+  useI18n,
+  type Locale,
+  type TranslationKey,
+} from './i18n';
 import {
   CropRect,
   DEFAULT_ENGINE_CONFIG,
@@ -24,7 +31,11 @@ import {
   exportFramesZipBlob,
   exportSpriteSheetPngBlob,
 } from './lib/animationExport';
-import { getSpriteSheetLayout } from './lib/spriteSheetLayout';
+import {
+  getSpriteSheetLayout,
+  MAX_SPRITE_SHEET_PIXELS,
+  MAX_SPRITE_SHEET_SIDE,
+} from './lib/spriteSheetLayout';
 import {
   deserializeManualEdit,
   loadPersistedWorkspace,
@@ -51,30 +62,36 @@ type UndoActionEntry =
   | { type: 'pixel-edit'; frameId: string }
   | { type: 'delete-frame'; frame: AnimationFrameItem; index: number };
 
-const BUILTIN_SAMPLES = [
+const BUILTIN_SAMPLES: Array<{
+  id: string;
+  labelKey: TranslationKey;
+  src: string;
+  defaultW: number;
+  defaultH: number;
+}> = [
   {
     id: 'rpg-knight',
-    label: '範例：騎士立繪 (1:1)',
+    labelKey: 'sample.rpgKnight',
     src: '/src/assets/images/sample_rpg_knight_1795397004570.jpg',
     defaultW: 64,
     defaultH: 64,
   },
   {
     id: 'fantasy-tavern',
-    label: '範例：煉金小屋 (4:3)',
+    labelKey: 'sample.fantasyTavern',
     src: '/src/assets/images/sample_fantasy_tavern_1795397003478.jpg',
     defaultW: 96,
     defaultH: 72,
   },
 ];
 
-const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
-  { id: 'side-by-side', label: '並排對照' },
-  { id: 'split', label: '拉桿對比' },
-  { id: 'pixel', label: '僅看像素' },
-  { id: 'crop', label: '範圍裁切' },
-  { id: 'edit', label: '像素精修' },
-  { id: 'animate', label: '動畫播放' },
+const VIEW_TABS: Array<{ id: ViewMode; labelKey: TranslationKey }> = [
+  { id: 'side-by-side', labelKey: 'tab.sideBySide' },
+  { id: 'split', labelKey: 'tab.split' },
+  { id: 'pixel', labelKey: 'tab.pixel' },
+  { id: 'crop', labelKey: 'tab.crop' },
+  { id: 'edit', labelKey: 'tab.edit' },
+  { id: 'animate', labelKey: 'tab.animate' },
 ];
 
 const MAX_HISTORY = 40;
@@ -106,6 +123,9 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 }
 
 export default function App() {
+  const { locale, setLocale, t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [frames, setFrames] = useState<AnimationFrameItem[]>([]);
   const [activeFrameId, setActiveFrameId] = useState<string | null>(null);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(BUILTIN_SAMPLES[0].id);
@@ -226,7 +246,7 @@ export default function App() {
 
     const reportError = (err: unknown) => {
       if (cancelled) return;
-      setErrorMsg(err instanceof Error ? err.message : String(err || '批次轉換運算發生錯誤'));
+      setErrorMsg(err instanceof Error ? err.message : String(err || tRef.current('error.batchConvert')));
       setIsBatchProcessing(false);
     };
 
@@ -380,7 +400,7 @@ export default function App() {
         setFrames([
           {
             id,
-            name: `${sample.label.replace('範例：', '')}.jpg`,
+            name: `${tRef.current(sample.labelKey).replace(tRef.current('sample.prefix'), '')}.jpg`,
             sourceImage: img,
             sampleSrc: sample.src,
             convertedResult: null,
@@ -399,7 +419,7 @@ export default function App() {
           return { ...prev, targetW: sample.defaultW, targetH: sample.defaultH, crop };
         });
       } catch {
-        setErrorMsg('範例圖片載入失敗。');
+        setErrorMsg(tRef.current('error.sampleLoad'));
       }
     },
     [clearUndoStacks]
@@ -550,7 +570,7 @@ export default function App() {
           }
           return {
             id: makeFrameId(),
-            name: file.name || '剪貼簿圖片.png',
+            name: file.name || t('sample.clipboardName'),
             sourceImage: img,
             sourceBlob: file,
             convertedResult: null,
@@ -615,9 +635,9 @@ export default function App() {
         setIsPlaying(false);
       }
     } catch {
-      setErrorMsg('部分圖片無法讀取，請確認格式為 PNG / JPG / WebP。');
+      setErrorMsg(t('error.uploadRead'));
     }
-  }, [clearUndoStacks]);
+  }, [clearUndoStacks, t]);
 
   // Global Ctrl+V clipboard paste support
   useEffect(() => {
@@ -975,9 +995,9 @@ export default function App() {
         `${baseName}_${activeResult.width}x${activeResult.height}_${exportScale}x.png`
       );
     } catch {
-      setErrorMsg('匯出 PNG 失敗，請再試一次。');
+      setErrorMsg(t('error.downloadPng'));
     }
-  }, [activeResult, activeFrame, exportScale]);
+  }, [activeResult, activeFrame, exportScale, t]);
 
   const handleCopyPng = useCallback(async () => {
     if (!activeResult) return;
@@ -987,9 +1007,9 @@ export default function App() {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       }
     } catch {
-      setErrorMsg('目前瀏覽器環境不允許直接寫入圖片到剪貼簿，請使用下載按鈕。');
+      setErrorMsg(t('error.clipboardWrite'));
     }
-  }, [activeResult, exportScale]);
+  }, [activeResult, exportScale, t]);
 
   const collectAllExportFrames = useCallback((): Array<{ name: string; imageData: ImageData }> => {
     const out: Array<{ name: string; imageData: ImageData }> = [];
@@ -1014,7 +1034,15 @@ export default function App() {
         spriteSheetCols
       );
       if (!layout.isWithinLimits) {
-        setErrorMsg(layout.errorMessage);
+        setErrorMsg(
+          t('error.sheetOversize', {
+            width: layout.width.toLocaleString(locale),
+            height: layout.height.toLocaleString(locale),
+            pixels: layout.pixelCount.toLocaleString(locale),
+            maxSide: MAX_SPRITE_SHEET_SIDE.toLocaleString(locale),
+            maxPixels: MAX_SPRITE_SHEET_PIXELS.toLocaleString(locale),
+          })
+        );
         return;
       }
       const blob = await exportSpriteSheetPngBlob(
@@ -1028,11 +1056,11 @@ export default function App() {
         `${base}_sheet_${ready.length}f_${config.targetW}x${config.targetH}_${exportScale}x.png`
       );
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '匯出 Sprite Sheet 失敗，請再試一次。');
+      setErrorMsg(err instanceof Error ? err.message : t('error.exportSheet'));
     } finally {
       setIsExporting(false);
     }
-  }, [collectAllExportFrames, spriteSheetCols, exportScale, config.targetW, config.targetH]);
+  }, [collectAllExportFrames, spriteSheetCols, exportScale, config.targetW, config.targetH, locale, t]);
 
   const handleDownloadGif = useCallback(async () => {
     const ready = collectAllExportFrames();
@@ -1050,11 +1078,11 @@ export default function App() {
         `${base}_anim_${ready.length}f_${fps}fps_${exportScale}x.gif`
       );
     } catch {
-      setErrorMsg('匯出動態 GIF 失敗，請再試一次。');
+      setErrorMsg(t('error.exportGif'));
     } finally {
       setIsExporting(false);
     }
-  }, [collectAllExportFrames, exportScale, fps]);
+  }, [collectAllExportFrames, exportScale, fps, t]);
 
   const handleDownloadZip = useCallback(async () => {
     const ready = collectAllExportFrames();
@@ -1068,11 +1096,20 @@ export default function App() {
         `${base}_frames_${ready.length}f_${config.targetW}x${config.targetH}_${exportScale}x.zip`
       );
     } catch {
-      setErrorMsg('打包 ZIP 失敗，請再試一次。');
+      setErrorMsg(t('error.exportZip'));
     } finally {
       setIsExporting(false);
     }
-  }, [collectAllExportFrames, exportScale, config.targetW, config.targetH]);
+  }, [collectAllExportFrames, exportScale, config.targetW, config.targetH, t]);
+
+  const localizedSamples = useMemo(
+    () =>
+      BUILTIN_SAMPLES.map((s) => ({
+        ...s,
+        label: t(s.labelKey),
+      })),
+    [t]
+  );
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
@@ -1096,14 +1133,29 @@ export default function App() {
                   active ? 'text-[#F8FAFC] font-medium' : 'text-[#8B95A8] hover:text-[#E2E8F0]'
                 }`}
               >
-                {tab.label}
+                {t(tab.labelKey)}
                 {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />}
               </button>
             );
           })}
         </nav>
 
-        <div aria-hidden="true" />
+        {/* Zone 3: Compact Language Switcher */}
+        <div className="justify-self-end shrink-0 flex items-center gap-1.5 px-2 py-1 bg-[#161A23] border border-[#2D3546] rounded-md">
+          <Globe className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+          <select
+            aria-label={t('app.langAria')}
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+            className="bg-transparent text-xs text-[#E2E8F0] outline-none cursor-pointer"
+          >
+            {LOCALE_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id} className="bg-[#161A23] text-[#E2E8F0]">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       {/* Error banner if needed */}
@@ -1115,7 +1167,7 @@ export default function App() {
             onClick={() => setErrorMsg(null)}
             className="text-rose-300 hover:text-white cursor-pointer"
           >
-            關閉
+            {t('app.close')}
           </button>
         </div>
       )}
@@ -1160,7 +1212,7 @@ export default function App() {
           onApplyPendingReconvert={clearAllManualEdits}
           onDismissPendingReconvert={() => setHasPendingReconvert(false)}
           onChangeCrop={handleChangeCrop}
-          samples={BUILTIN_SAMPLES}
+          samples={localizedSamples}
           activeSampleId={activeSampleId}
           onSelectSample={(s) => {
             const full = BUILTIN_SAMPLES.find((b) => b.id === s.id);

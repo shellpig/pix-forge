@@ -34,6 +34,7 @@ import {
 } from '../lib/pixelEditOps';
 import { PixelEditorBar, PixelEditorState } from './PixelEditorBar';
 import { FrameTimelineBar, TimelineFramePreview } from './FrameTimelineBar';
+import { useI18n } from '../i18n';
 
 export type ViewMode = 'side-by-side' | 'split' | 'pixel' | 'crop' | 'edit' | 'animate';
 export type BackdropMode = 'checker' | 'dark' | 'light';
@@ -218,6 +219,7 @@ export function CanvasViewport({
   onSelectSample,
   onChangeViewMode,
 }: CanvasViewportProps) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editCanvasBoxRef = useRef<HTMLDivElement | null>(null);
   const pixelCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -837,24 +839,24 @@ export function CanvasViewport({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            title="上傳單張圖片，或一次選取多張圖片建立新動畫"
+            title={t('toolbar.uploadTitle')}
             className="inline-flex shrink-0 items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5 text-sky-400" />
-            上傳圖片
+            {t('toolbar.upload')}
           </button>
 
           <select
-            aria-label="載入內建範例圖片"
-            title="選取範例圖片（會取代目前影格）"
+            aria-label={t('toolbar.sampleAria')}
+            title={t('toolbar.sampleTitle')}
             value={activeSampleId ?? ''}
             onChange={(e) => {
               const sample = samples.find((item) => item.id === e.target.value);
               if (sample) onSelectSample(sample);
             }}
-            className="shrink-0 max-w-[156px] py-1 px-1.5 text-[11px] bg-[#161A23] border border-[#2D3546] text-[#CBD5E1] rounded cursor-pointer"
+            className="shrink-0 max-w-[168px] py-1 px-1.5 text-[11px] bg-[#161A23] border border-[#2D3546] text-[#CBD5E1] rounded cursor-pointer"
           >
-            <option value="">選擇範例</option>
+            <option value="">{t('toolbar.samplePlaceholder')}</option>
             {samples.map((sample) => (
               <option key={sample.id} value={sample.id}>{sample.label}</option>
             ))}
@@ -869,8 +871,8 @@ export function CanvasViewport({
                   type="button"
                   disabled={timelineFrames.length < 2}
                   onClick={() => onStepFrame(-1)}
-                  title="上一格 (←)"
-                  aria-label="上一格"
+                  title={t('toolbar.prevFrameTitle')}
+                  aria-label={t('toolbar.prevFrame')}
                   className="p-1 border border-[#262C3B] bg-[#161A23] hover:bg-[#232B3C] text-[#CBD5E1] disabled:opacity-35 rounded cursor-pointer"
                 >
                   <SkipBack className="w-3 h-3" />
@@ -879,20 +881,20 @@ export function CanvasViewport({
                   type="button"
                   disabled={timelineFrames.length < 2}
                   onClick={onTogglePlay}
-                  title={isPlaying ? '暫停播放 (Space)' : '開始播放 (Space)'}
+                  title={isPlaying ? t('toolbar.pauseTitle') : t('toolbar.playTitle')}
                   className={'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded disabled:opacity-40 cursor-pointer ' + (isPlaying
                     ? 'bg-amber-400 hover:bg-amber-300 text-[#0B0D11]'
                     : 'bg-sky-400 hover:bg-sky-300 text-[#081018]')}
                 >
                   {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                  {isPlaying ? '暫停' : '播放'}
+                  {isPlaying ? t('toolbar.pause') : t('toolbar.play')}
                 </button>
                 <button
                   type="button"
                   disabled={timelineFrames.length < 2}
                   onClick={() => onStepFrame(1)}
-                  title="下一格 (→)"
-                  aria-label="下一格"
+                  title={t('toolbar.nextFrameTitle')}
+                  aria-label={t('toolbar.nextFrame')}
                   className="p-1 border border-[#262C3B] bg-[#161A23] hover:bg-[#232B3C] text-[#CBD5E1] disabled:opacity-35 rounded cursor-pointer"
                 >
                   <SkipForward className="w-3 h-3" />
@@ -925,7 +927,7 @@ export function CanvasViewport({
                     max={30}
                     step={1}
                     value={fps}
-                    aria-label="自訂播放速度（1 至 30 FPS）"
+                    aria-label={t('toolbar.fpsInputAria')}
                     onChange={(e) => {
                       if (e.target.value !== '') {
                         onChangeFps(Math.max(1, Math.min(30, Number(e.target.value))));
@@ -940,18 +942,18 @@ export function CanvasViewport({
                 <button
                   type="button"
                   onClick={() => onEditFrame(activeFrameId)}
-                  title="進入目前影格的像素精修"
+                  title={t('toolbar.editCurrentTitle')}
                   className="inline-flex shrink-0 items-center gap-1 px-2 py-1 border border-[#2D3546] bg-[#1A202D] hover:bg-[#232B3C] rounded text-[11px] text-[#E2E8F0] cursor-pointer"
                 >
                   <Pencil className="w-3 h-3 text-sky-400" />
-                  精修
+                  {t('toolbar.editCurrent')}
                 </button>
               )}
             </>
           )}
 
           {isBatchProcessing && (
-            <span className="shrink-0 text-[11px] text-sky-300">批次轉換中…</span>
+            <span className="shrink-0 text-[11px] text-sky-300">{t('toolbar.batchProcessing')}</span>
           )}
 
           {viewMode !== 'crop' && (
@@ -960,33 +962,33 @@ export function CanvasViewport({
               <button
                 type="button"
                 onClick={() => setShowGrid((value) => !value)}
-                title="顯示或隱藏像素格線（含 8×8 區塊輔助線）"
+                title={t('toolbar.gridTitle')}
                 className={'inline-flex shrink-0 items-center gap-1 px-2 py-1 text-[11px] rounded border cursor-pointer ' + (showGrid
                   ? 'bg-sky-500/20 border-sky-400 text-sky-200'
                   : 'bg-[#161A23] border-[#2D3546] text-[#CBD5E1] hover:border-sky-400/50')}
               >
                 <Grid3X3 className="w-3 h-3" />
-                {showGrid ? '格線開' : '格線關'}
+                {showGrid ? t('toolbar.gridOn') : t('toolbar.gridOff')}
               </button>
 
               <select
-                aria-label="畫布背景色"
-                title="切換棋盤、黑底或白底"
+                aria-label={t('toolbar.backdropAria')}
+                title={t('toolbar.backdropTitle')}
                 value={backdrop}
                 onChange={(e) => setBackdrop(e.target.value as BackdropMode)}
                 className="shrink-0 px-1.5 py-1 border border-[#2D3546] bg-[#161A23] text-[11px] text-[#CBD5E1] rounded cursor-pointer"
               >
-                <option value="checker">棋盤</option>
-                <option value="dark">黑底</option>
-                <option value="light">白底</option>
+                <option value="checker">{t('toolbar.backdropChecker')}</option>
+                <option value="dark">{t('toolbar.backdropDark')}</option>
+                <option value="light">{t('toolbar.backdropLight')}</option>
               </select>
 
               <div className="flex shrink-0 items-center gap-1 px-1 py-0.5 border border-[#262B38] bg-[#161A23] rounded">
                 <button
                   type="button"
                   onClick={() => setZoom((z) => Math.max(MIN_ZOOM, +(z - 0.25).toFixed(2)))}
-                  title="縮小"
-                  aria-label="縮小"
+                  title={t('toolbar.zoomOut')}
+                  aria-label={t('toolbar.zoomOut')}
                   className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
                 >
                   <ZoomOut className="w-3 h-3" />
@@ -994,7 +996,7 @@ export function CanvasViewport({
                 <button
                   type="button"
                   onClick={() => setZoom(1)}
-                  title="重設為符合視窗"
+                  title={t('toolbar.zoomResetTitle')}
                   className="px-1 text-[11px] font-mono tabular-nums text-[#CBD5E1] hover:text-sky-300 cursor-pointer"
                 >
                   {Math.round(zoom * 100)}%
@@ -1002,8 +1004,8 @@ export function CanvasViewport({
                 <button
                   type="button"
                   onClick={() => setZoom((z) => Math.min(MAX_ZOOM, +(z + 0.25).toFixed(2)))}
-                  title="放大"
-                  aria-label="放大"
+                  title={t('toolbar.zoomIn')}
+                  aria-label={t('toolbar.zoomIn')}
                   className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
                 >
                   <ZoomIn className="w-3 h-3" />
@@ -1014,8 +1016,8 @@ export function CanvasViewport({
           <button
             type="button"
             onClick={() => setShowShortcutHelp((value) => !value)}
-            title="查看操作快捷鍵"
-            aria-label="查看操作快捷鍵"
+            title={t('toolbar.shortcutsAria')}
+            aria-label={t('toolbar.shortcutsAria')}
             aria-expanded={showShortcutHelp}
             className="shrink-0 p-1 text-[#94A3B8] hover:text-sky-300 bg-[#161A23] border border-[#2D3546] rounded cursor-pointer"
           >
@@ -1044,23 +1046,21 @@ export function CanvasViewport({
       {/* Pending Reconversion Protection Notice */}
       {hasPendingReconvert && (
         <div className="px-4 py-2 bg-amber-500/12 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-100 shrink-0">
-          <span>
-            轉換參數或動畫影格已變更，目前保留手動修圖結果。套用新轉換將覆蓋手修版本。
-          </span>
+          <span>{t('reconvert.notice')}</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onApplyPendingReconvert}
               className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-[#0B0D11] font-medium rounded transition-colors cursor-pointer"
             >
-              套用新轉換（覆蓋手修）
+              {t('reconvert.apply')}
             </button>
             <button
               type="button"
               onClick={onDismissPendingReconvert}
               className="px-2.5 py-1 bg-[#1A1F2B] hover:bg-[#252C3D] text-amber-100 border border-amber-500/30 rounded transition-colors cursor-pointer"
             >
-              維持目前修圖
+              {t('reconvert.keep')}
             </button>
           </div>
         </div>
@@ -1084,10 +1084,10 @@ export function CanvasViewport({
           >
             <ImagePlus className="w-8 h-8 text-sky-400 mx-auto mb-3" />
             <p className="text-sm font-medium text-[#F1F5F9] mb-1">
-              點擊上傳單張或一次多選多張連續動畫圖
+              {t('stage.emptyTitle')}
             </p>
             <p className="text-xs text-[#94A3B8]">
-              支援 PNG / JPG / WebP，也可以拖曳整組連續圖或按 Ctrl+V 貼上
+              {t('stage.emptyDesc')}
             </p>
           </div>
         ) : viewMode === 'crop' ? (
@@ -1095,11 +1095,11 @@ export function CanvasViewport({
           <div className="flex flex-col items-center gap-3">
             <div className="flex flex-wrap items-center gap-3 text-xs text-[#94A3B8]">
               <span>
-                拖曳裁切框或四角控制點，系統會自動鎖定輸出比例{' '}
+                {t('crop.hintPrefix')}{' '}
                 <strong className="font-mono text-sky-300">
                   {config.targetW}:{config.targetH}
                 </strong>
-                {timelineFrames.length > 1 ? '（將同步套用到全部影格）' : ''}
+                {timelineFrames.length > 1 ? t('crop.hintMulti') : ''}
               </span>
               <button
                 type="button"
@@ -1116,7 +1116,7 @@ export function CanvasViewport({
                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#1A1F2B] hover:bg-[#232A3A] text-[#E2E8F0] border border-[#2D3546] rounded text-xs cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" />
-                置中符合比例
+                {t('crop.center')}
               </button>
               <button
                 type="button"
@@ -1126,7 +1126,7 @@ export function CanvasViewport({
                 className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500 hover:bg-sky-400 text-[#090C10] font-medium rounded text-xs cursor-pointer"
               >
                 <CropIcon className="w-3 h-3" />
-                完成裁切
+                {t('crop.done')}
               </button>
             </div>
 
@@ -1140,7 +1140,7 @@ export function CanvasViewport({
             >
               <canvas
                 ref={cropPreviewCanvasRef}
-                aria-label="原圖裁切檢視"
+                aria-label={t('crop.previewAria')}
                 className={`block w-full h-full select-none ${
                   sourceImage.naturalWidth <= 256 && sourceImage.naturalHeight <= 256 ? 'pixelated' : ''
                 }`}
@@ -1208,29 +1208,13 @@ export function CanvasViewport({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-[#F1F5F9] font-medium whitespace-nowrap">
                   {timelineFrames.length > 1
-                    ? `第 ${activeFrameIdx + 1} 格 · `
+                    ? t('edit.framePrefix', { n: activeFrameIdx + 1 })
                     : ''}
-                  {editor.tool === 'pencil'
-                    ? '畫筆精修'
-                    : editor.tool === 'eraser'
-                      ? '橡皮擦去背'
-                      : editor.tool === 'eyedropper'
-                        ? '滴管吸色'
-                        : editor.tool === 'bucket'
-                          ? '油漆桶填色'
-                          : '魔術棒去背'}
+                  {t(`edit.title.${editor.tool}`)}
                 </span>
                 <span className="text-[11px] text-[#8B95A8]">
-                  {editor.tool === 'pencil'
-                    ? '左鍵點塗 · 右鍵點格去背'
-                    : editor.tool === 'eraser'
-                      ? '左鍵點拖變透明'
-                      : editor.tool === 'eyedropper'
-                        ? '點擊像素吸色'
-                        : editor.tool === 'bucket'
-                          ? '點擊區域填色'
-                          : '點擊清除背景'}
-                  {' · 滾輪放大縮小 · 中鍵移動'}
+                  {t(`edit.hint.${editor.tool}`)}
+                  {t('edit.hint.zoomPan')}
                 </span>
               </div>
               <span className="font-mono tabular-nums text-sky-300 shrink-0">
@@ -1283,7 +1267,7 @@ export function CanvasViewport({
           <div className="flex flex-col items-center gap-2">
             <div className="w-full flex items-center justify-between gap-4 text-xs text-[#94A3B8]">
               <span className="text-[#F1F5F9] font-medium truncate max-w-[260px]">
-                {isPlaying ? `播放中（${fps} FPS）` : '已暫停'} · {sourceName}
+                {isPlaying ? t('animate.playing', { fps }) : t('animate.paused')} · {sourceName}
               </span>
               <span className="font-mono tabular-nums text-sky-300 shrink-0">
                 {config.targetW}×{config.targetH}
@@ -1309,7 +1293,7 @@ export function CanvasViewport({
           <div className="flex flex-col md:flex-row items-center justify-center gap-6">
             <div className="flex flex-col items-center gap-2">
               <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
-                <span>高解析原圖（裁切後）</span>
+                <span>{t('compare.sourceTitle')}</span>
                 <span className="font-mono tabular-nums">
                   {Math.round(config.crop.w * sourceImage.naturalWidth)}×
                   {Math.round(config.crop.h * sourceImage.naturalHeight)}
@@ -1326,7 +1310,8 @@ export function CanvasViewport({
             <div className="flex flex-col items-center gap-2">
               <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
                 <span className="text-[#F1F5F9] font-medium">
-                  像素轉換結果{hasManualEdits ? '（已手動精修）' : ''}
+                  {t('compare.pixelTitle')}
+                  {hasManualEdits ? t('compare.editedSuffix') : ''}
                 </span>
                 <span className="font-mono tabular-nums text-sky-300">
                   {config.targetW}×{config.targetH}
@@ -1352,10 +1337,10 @@ export function CanvasViewport({
           /* Interactive Split Slider Comparison */
           <div className="flex flex-col items-center gap-2">
             <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
-              <span>左側：高解析原圖</span>
-              <span>拖曳中線檢視線條與五官保留度</span>
+              <span>{t('split.left')}</span>
+              <span>{t('split.middle')}</span>
               <span className="text-sky-300">
-                右側：像素結果 ({config.targetW}×{config.targetH})
+                {t('split.right', { w: config.targetW, h: config.targetH })}
               </span>
             </div>
             <div
@@ -1399,7 +1384,8 @@ export function CanvasViewport({
           <div className="flex flex-col items-center gap-2">
             <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
               <span className="text-[#F1F5F9] font-medium">
-                像素預覽{hasManualEdits ? '（已手動精修）' : ''}
+                {t('pixel.previewTitle')}
+                {hasManualEdits ? t('compare.editedSuffix') : ''}
               </span>
               <span className="font-mono tabular-nums text-sky-300">
                 {config.targetW}×{config.targetH}
@@ -1429,7 +1415,7 @@ export function CanvasViewport({
           <div className="absolute bottom-2 left-2 z-20 pointer-events-none flex items-center gap-2 px-2 py-1 bg-[#0D1016]/95 border border-[#2D3546] rounded text-[11px] font-mono tabular-nums text-[#CBD5E1]">
             <span>X:{hoverPixel.x} Y:{hoverPixel.y}</span>
             {hoverPixel.isTransparent ? (
-              <span className="text-[#94A3B8]">透明像素</span>
+              <span className="text-[#94A3B8]">{t('edit.transparentPixel')}</span>
             ) : (
               <span className="inline-flex items-center gap-1">
                 <span
@@ -1443,24 +1429,24 @@ export function CanvasViewport({
         )}
 
         {showShortcutHelp && (
-          <div role="dialog" aria-label="操作快捷鍵說明" className="absolute right-3 top-3 z-40 max-w-[min(360px,calc(100%-24px))] p-3 bg-[#151B26] border border-[#364056] shadow-xl rounded-md text-xs text-[#CBD5E1]">
+          <div role="dialog" aria-label={t('shortcuts.dialogAria')} className="absolute right-3 top-3 z-40 max-w-[min(360px,calc(100%-24px))] p-3 bg-[#151B26] border border-[#364056] shadow-xl rounded-md text-xs text-[#CBD5E1]">
             <div className="flex items-center justify-between gap-4 mb-2">
-              <span className="font-semibold text-[#F1F5F9]">操作快捷鍵</span>
+              <span className="font-semibold text-[#F1F5F9]">{t('shortcuts.title')}</span>
               <button
                 type="button"
                 onClick={() => setShowShortcutHelp(false)}
-                aria-label="關閉快捷鍵說明"
+                aria-label={t('shortcuts.closeAria')}
                 className="text-[#94A3B8] hover:text-white cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="leading-relaxed">Ctrl+V：貼上圖片。可拖曳多張圖建立動畫序列。</p>
+            <p className="leading-relaxed">{t('shortcuts.global')}</p>
             {viewMode === 'animate' && (
-              <p className="mt-1.5 leading-relaxed">Space：播放／暫停；←／→：切換影格；雙擊縮圖：精修影格。</p>
+              <p className="mt-1.5 leading-relaxed">{t('shortcuts.animate')}</p>
             )}
             {viewMode === 'edit' && (
-              <p className="mt-1.5 leading-relaxed">B：畫筆；E：橡皮擦；I：滴管；G：油漆桶；W：魔術棒；滾輪：縮放畫布；中鍵拖曳：移動視角；Ctrl+Z：復原；Ctrl+Y：重做；右鍵：去背；Alt+點擊：吸色。</p>
+              <p className="mt-1.5 leading-relaxed">{t('shortcuts.edit')}</p>
             )}
           </div>
         )}
@@ -1470,13 +1456,13 @@ export function CanvasViewport({
           <div className="fixed md:absolute bottom-4 right-4 z-20 bg-[#12161F]/95 border border-[#262B38] rounded-md shadow-xl overflow-hidden">
             <div className="px-2.5 py-1.5 border-b border-[#222733] flex items-center justify-between gap-4">
               <span className="text-[11px] font-medium text-[#CBD5E1] whitespace-nowrap">
-                {viewMode === 'animate' && isPlaying ? `1:1 動態預覽 (${fps} FPS)` : '實際尺寸預覽'}
+                {viewMode === 'animate' && isPlaying ? t('realSize.liveTitle', { fps }) : t('realSize.title')}
               </span>
               <button
                 type="button"
                 onClick={() => setShowRealSize((v) => !v)}
                 className="text-[#94A3B8] hover:text-[#F1F5F9] transition-colors cursor-pointer"
-                aria-label={showRealSize ? '收合實際尺寸預覽' : '展開實際尺寸預覽'}
+                aria-label={showRealSize ? t('realSize.collapseAria') : t('realSize.expandAria')}
               >
                 {showRealSize ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
@@ -1534,7 +1520,7 @@ export function CanvasViewport({
         <div className="absolute inset-0 bg-sky-500/10 border-2 border-dashed border-sky-400 flex items-center justify-center z-30 pointer-events-none">
           <div className="px-5 py-3 bg-[#0F1218] border border-sky-400/50 rounded-md text-sm font-medium text-sky-200 shadow-xl flex items-center gap-2">
             <Maximize2 className="w-4 h-4 text-sky-400" />
-            放開即可載入單張圖片或整組連續動畫序列
+            {t('stage.dropOverlay')}
           </div>
         </div>
       )}

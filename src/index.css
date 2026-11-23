@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", "Noto Sans TC", system-ui, -apple-system, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Noto Sans TC", "Noto Sans JP", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

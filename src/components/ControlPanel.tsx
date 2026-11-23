@@ -13,7 +13,11 @@ import {
   Unlock,
 } from 'lucide-react';
 import { PRESET_PALETTES } from '../lib/palettes';
-import { getSpriteSheetLayout } from '../lib/spriteSheetLayout';
+import {
+  getSpriteSheetLayout,
+  MAX_SPRITE_SHEET_PIXELS,
+  MAX_SPRITE_SHEET_SIDE,
+} from '../lib/spriteSheetLayout';
 import { isCleanupDisabledByDither } from '../lib/isolatedPixels';
 import {
   DitherMode,
@@ -23,6 +27,7 @@ import {
   PixelEngineConfig,
   PixelEngineResult,
 } from '../lib/pixelEngine';
+import { useI18n, type TranslationKey } from '../i18n';
 
 interface ControlPanelProps {
   config: PixelEngineConfig;
@@ -67,27 +72,11 @@ const RECT_PRESETS: Array<[number, number]> = [
   [128, 96],
 ];
 
-const DOWNSCALE_OPTIONS: Array<{ id: DownscaleMode; label: string; desc: string }> = [
-  {
-    id: 'clean-sprite',
-    label: '精緻角色 (推薦)',
-    desc: '主色聚類＋平滑區自動柔化＋高彩焦點保護（保留瞳孔與臉部乾淨色塊，不黑糊）。',
-  },
-  {
-    id: 'pixeloe',
-    label: 'LAB 分離',
-    desc: '將明暗與色相分離運算，僅強化輪廓明暗、維持原色乾淨，適合細線插畫。',
-  },
-  {
-    id: 'k-centroid',
-    label: 'K-Centroid 銳利',
-    desc: '純雙色聚類取多數色塊，消除反鋸齒灰邊，適合賽璐璐與遊戲貼圖。',
-  },
-  {
-    id: 'area',
-    label: '柔和原圖縮放',
-    desc: '漸進式高畫質區域平均縮圖，最忠實還原 64×64 以上立繪的柔和漸層。',
-  },
+const DOWNSCALE_OPTIONS: Array<{ id: DownscaleMode; labelKey: TranslationKey; descKey: TranslationKey }> = [
+  { id: 'clean-sprite', labelKey: 'panel.algo.cleanSprite', descKey: 'panel.algo.cleanSpriteDesc' },
+  { id: 'pixeloe', labelKey: 'panel.algo.pixeloe', descKey: 'panel.algo.pixeloeDesc' },
+  { id: 'k-centroid', labelKey: 'panel.algo.kCentroid', descKey: 'panel.algo.kCentroidDesc' },
+  { id: 'area', labelKey: 'panel.algo.area', descKey: 'panel.algo.areaDesc' },
 ];
 
 export function ControlPanel({
@@ -114,6 +103,7 @@ export function ControlPanel({
   onDownloadGif,
   onDownloadZip,
 }: ControlPanelProps) {
+  const { locale, t } = useI18n();
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
   const [copiedImg, setCopiedImg] = useState<boolean>(false);
   const cleanupDisabledByDither = isCleanupDisabledByDither(config);
@@ -173,7 +163,8 @@ export function ControlPanel({
         <section className="p-4 space-y-3.5">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
-              輸出像素尺寸{frameCount > 1 ? '（全組共用）' : ''}
+              {t('panel.resolution')}
+              {frameCount > 1 ? t('panel.resolutionShared') : ''}
             </h2>
             <button
               type="button"
@@ -181,13 +172,13 @@ export function ControlPanel({
               className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
             >
               <Crop className="w-3.5 h-3.5" />
-              調整裁切框
+              {t('panel.adjustCrop')}
             </button>
           </div>
 
           <div className="flex items-center gap-2">
             <label className="flex-1">
-              <span className="block text-[11px] text-[#8B95A8] mb-1">寬度 (W)</span>
+              <span className="block text-[11px] text-[#8B95A8] mb-1">{t('panel.width')}</span>
               <input
                 type="number"
                 min={8}
@@ -201,14 +192,14 @@ export function ControlPanel({
             <button
               type="button"
               onClick={() => onSelectDimensions(config.targetH, config.targetW)}
-              title="對調寬高"
+              title={t('panel.swapTitle')}
               className="mt-5 p-2 bg-[#181C26] hover:bg-[#222836] border border-[#2A3142] rounded text-[#94A3B8] hover:text-[#F1F5F9] transition-colors cursor-pointer"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
             </button>
 
             <label className="flex-1">
-              <span className="block text-[11px] text-[#8B95A8] mb-1">高度 (H)</span>
+              <span className="block text-[11px] text-[#8B95A8] mb-1">{t('panel.height')}</span>
               <input
                 type="number"
                 min={8}
@@ -222,7 +213,7 @@ export function ControlPanel({
             <button
               type="button"
               onClick={onToggleLockAspect}
-              title={lockAspect ? '已鎖定原圖長寬比' : '自由長寬比（自動裁切符合比例）'}
+              title={lockAspect ? t('panel.lockTitle') : t('panel.unlockTitle')}
               className={`mt-5 p-2 border rounded transition-colors cursor-pointer ${
                 lockAspect
                   ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
@@ -235,7 +226,7 @@ export function ControlPanel({
 
           <div className="space-y-2">
             <div>
-              <span className="block text-[11px] text-[#64748B] mb-1.5">常用正方形</span>
+              <span className="block text-[11px] text-[#64748B] mb-1.5">{t('panel.squarePresets')}</span>
               <div className="grid grid-cols-3 gap-1.5">
                 {SQUARE_PRESETS.map(([w, h]) => {
                   const active = config.targetW === w && config.targetH === h;
@@ -258,7 +249,7 @@ export function ControlPanel({
             </div>
 
             <div>
-              <span className="block text-[11px] text-[#64748B] mb-1.5">非正方形（自動置中裁切）</span>
+              <span className="block text-[11px] text-[#64748B] mb-1.5">{t('panel.rectPresets')}</span>
               <div className="grid grid-cols-3 gap-1.5">
                 {RECT_PRESETS.map(([w, h]) => {
                   const active = config.targetW === w && config.targetH === h;
@@ -286,7 +277,7 @@ export function ControlPanel({
         <section className="p-4 space-y-3.5">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
-              降採樣與輪廓演算法
+              {t('panel.algorithm')}
             </h2>
             <button
               type="button"
@@ -294,7 +285,7 @@ export function ControlPanel({
               className="inline-flex items-center gap-1 text-[11px] text-[#8B95A8] hover:text-[#E2E8F0] transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" />
-              重設
+              {t('panel.reset')}
             </button>
           </div>
 
@@ -312,19 +303,19 @@ export function ControlPanel({
                       : 'bg-[#161A23] border-[#252B39] text-[#CBD5E1] hover:border-[#384156]'
                   }`}
                 >
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </button>
               );
             })}
           </div>
 
           {activeDownscale && (
-            <p className="text-[11px] leading-relaxed text-[#8B95A8]">{activeDownscale.desc}</p>
+            <p className="text-[11px] leading-relaxed text-[#8B95A8]">{t(activeDownscale.descKey)}</p>
           )}
 
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">色塊平滑化（去細線雜訊）</span>
+              <span className="text-[#CBD5E1]">{t('panel.smoothness')}</span>
               <span className="font-mono tabular-nums text-sky-300">{config.smoothness}%</span>
             </div>
             <input
@@ -340,7 +331,7 @@ export function ControlPanel({
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">細緻輪廓強調</span>
+              <span className="text-[#CBD5E1]">{t('panel.outlineStrength')}</span>
               <span className="font-mono tabular-nums text-[#94A3B8]">{config.outlineStrength}%</span>
             </div>
             <input
@@ -356,7 +347,7 @@ export function ControlPanel({
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">邊緣銳化</span>
+              <span className="text-[#CBD5E1]">{t('panel.preSharpen')}</span>
               <span className="font-mono tabular-nums text-[#94A3B8]">{config.preSharpen}%</span>
             </div>
             <input
@@ -374,17 +365,17 @@ export function ControlPanel({
         {/* Section 3: Color Quantization & Palette */}
         <section className="p-4 space-y-3.5">
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
-            色彩量化與色盤 (OKLab)
+            {t('panel.paletteSection')}
           </h2>
 
           <div className="grid grid-cols-3 gap-1 p-1 bg-[#161A23] border border-[#252B39] rounded-md">
             {(
               [
-                ['auto', '自動萃取'],
-                ['preset', '經典色盤'],
-                ['full', '保留原色'],
-              ] as Array<[PaletteMode, string]>
-            ).map(([mode, label]) => (
+                ['auto', 'panel.paletteAuto'],
+                ['preset', 'panel.palettePreset'],
+                ['full', 'panel.paletteFull'],
+              ] as Array<[PaletteMode, TranslationKey]>
+            ).map(([mode, labelKey]) => (
               <button
                 key={mode}
                 type="button"
@@ -395,7 +386,7 @@ export function ControlPanel({
                     : 'text-[#8B95A8] hover:text-[#E2E8F0]'
                 }`}
               >
-                {label}
+                {t(labelKey)}
               </button>
             ))}
           </div>
@@ -407,7 +398,7 @@ export function ControlPanel({
                 <div className="p-2.5 rounded bg-[#161A23] border border-[#252B39] space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-[#E2E8F0]">
-                      全組共用統一色盤
+                      {t('panel.sharedPalette')}
                     </span>
                     <button
                       type="button"
@@ -429,16 +420,16 @@ export function ControlPanel({
                   </div>
                   <p className="text-[11px] text-[#8B95A8] leading-snug">
                     {config.sharedSequencePalette
-                      ? '跨全部影格萃取同一套色盤，播放動畫時色彩穩定不閃爍。'
-                      : '每張影格各自獨立算色盤（適合畫面色系差異極大的影格）。'}
+                      ? t('panel.sharedPaletteOn')
+                      : t('panel.sharedPaletteOff')}
                   </p>
                 </div>
               )}
 
               <div className="flex items-center justify-between text-xs">
-                <span className="text-[#CBD5E1]">色數上限</span>
+                <span className="text-[#CBD5E1]">{t('panel.maxColors')}</span>
                 <span className="font-mono tabular-nums text-sky-300">
-                  {config.autoColorCount} 色
+                  {t('panel.colorCount', { count: config.autoColorCount })}
                 </span>
               </div>
               <input
@@ -493,7 +484,7 @@ export function ControlPanel({
                         {pal.name}
                       </span>
                       <span className="text-[10px] font-mono tabular-nums text-[#8B95A8]">
-                        {pal.colors.length} 色
+                        {t('panel.colorCount', { count: pal.colors.length })}
                       </span>
                     </div>
                     <div className="flex h-2 rounded-xs overflow-hidden">
@@ -514,11 +505,11 @@ export function ControlPanel({
           {config.paletteMode !== 'full' && (
             <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-[#CBD5E1] whitespace-nowrap">抖動 (Dithering)</span>
+                <span className="text-xs text-[#CBD5E1] whitespace-nowrap">{t('panel.dither')}</span>
                 <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
                   {(
                     [
-                      ['none', '無'],
+                      ['none', t('panel.ditherNone')],
                       ['bayer4', 'Bayer'],
                       ['floyd', 'Floyd'],
                     ] as Array<[DitherMode, string]>
@@ -542,7 +533,7 @@ export function ControlPanel({
               {config.ditherMode !== 'none' && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#94A3B8]">抖動強度</span>
+                    <span className="text-[#94A3B8]">{t('panel.ditherStrength')}</span>
                     <span className="font-mono tabular-nums text-[#CBD5E1]">
                       {config.ditherStrength}%
                     </span>
@@ -564,13 +555,13 @@ export function ControlPanel({
           {/* Post-quantization cleanup, disabled while actual dithering is active. */}
           <div className="space-y-1.5 pt-2 border-t border-[#252B39]">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-[#CBD5E1]">雜點清除（後處理）</span>
-              <div role="group" aria-label="孤立像素清除強度" className="flex items-center gap-0.5 rounded p-0.5 bg-[#161A23] border border-[#252B39]">
+              <span className="text-xs text-[#CBD5E1]">{t('panel.cleanup')}</span>
+              <div role="group" aria-label={t('panel.cleanupAria')} className="flex items-center gap-0.5 rounded p-0.5 bg-[#161A23] border border-[#252B39]">
                 {([
-                  ['off', '關'],
-                  ['light', '輕'],
-                  ['strong', '強'],
-                ] as Array<[IsolatedPixelMode, string]>).map(([mode, label]) => (
+                  ['off', 'panel.cleanupOff'],
+                  ['light', 'panel.cleanupLight'],
+                  ['strong', 'panel.cleanupStrong'],
+                ] as Array<[IsolatedPixelMode, TranslationKey]>).map(([mode, labelKey]) => (
                   <button
                     key={mode}
                     type="button"
@@ -583,30 +574,28 @@ export function ControlPanel({
                         : 'text-[#94A3B8] hover:text-[#E2E8F0]'
                     }`}
                   >
-                    {label}
+                    {t(labelKey)}
                   </button>
                 ))}
               </div>
             </div>
             <p className="text-[11px] leading-relaxed text-[#8B95A8]">
               {cleanupDisabledByDither
-                ? '已啟用抖色：雜點清除會抹掉刻意交錯的像素，因此暫時停用；關閉抖色後恢復原選擇。'
+                ? t('panel.cleanupDisabledDither')
                 : config.isolatedPixelMode === 'light'
-                  ? '鄰近顏色出現至少 4 次、Oklab 色差 ≤0.2 才清除；兩種強度都保護亮暗極值與高光。'
+                  ? t('panel.cleanupLightDesc')
                   : config.isolatedPixelMode === 'strong'
-                    ? '鄰近顏色出現至少 3 次、Oklab 色差 ≤0.3 才清除；仍保留亮暗極值保護。'
-                    : '關閉孤立像素清除，保留原本的量化輸出。'}
+                    ? t('panel.cleanupStrongDesc')
+                    : t('panel.cleanupOffDesc')}
             </p>
           </div>
 
           {result && result.palette.length > 0 && (
             <div className="pt-1">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A8] mb-1.5">
-                <span>
-                  輸出色盤（共 <span className="font-mono text-[#CBD5E1]">{result.uniqueColorCount}</span> 色）
-                </span>
+                <span>{t('panel.outputPalette', { count: result.uniqueColorCount })}</span>
                 <span className="font-mono text-sky-300">
-                  {copiedHex ? `已選取 ${copiedHex}` : '點擊取色／複製'}
+                  {copiedHex ? t('panel.copiedHex', { hex: copiedHex }) : t('panel.clickToCopyHex')}
                 </span>
               </div>
               <div className="grid grid-cols-12 gap-1">
@@ -627,11 +616,11 @@ export function ControlPanel({
 
         {/* Section 4: Tone & Alpha Adjustments */}
         <section className="p-4 space-y-3">
-          <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">畫面微調與透明邊緣</h2>
+          <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">{t('panel.toneSection')}</h2>
 
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">對比度</span>
+              <span className="text-[#CBD5E1]">{t('panel.contrast')}</span>
               <span className="font-mono tabular-nums text-[#94A3B8]">
                 {config.contrast > 0 ? `+${config.contrast}` : config.contrast}
               </span>
@@ -649,7 +638,7 @@ export function ControlPanel({
 
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">飽和度</span>
+              <span className="text-[#CBD5E1]">{t('panel.saturation')}</span>
               <span className="font-mono tabular-nums text-[#94A3B8]">
                 {config.saturation > 0 ? `+${config.saturation}` : config.saturation}
               </span>
@@ -667,7 +656,7 @@ export function ControlPanel({
 
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#CBD5E1]">透明裁切閾值 (Alpha Cutoff)</span>
+              <span className="text-[#CBD5E1]">{t('panel.alphaCutoff')}</span>
               <span className="font-mono tabular-nums text-[#94A3B8]">{config.alphaThreshold}</span>
             </div>
             <input
@@ -686,7 +675,7 @@ export function ControlPanel({
       {/* Pinned Export Footer inside Inspector */}
       <div className="p-4 border-t border-[#222733] bg-[#0F1218] space-y-2.5 shrink-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-[#CBD5E1] whitespace-nowrap">匯出倍率</span>
+          <span className="text-xs text-[#CBD5E1] whitespace-nowrap">{t('panel.exportScale')}</span>
           <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
             {[1, 4, 8, 16].map((scale) => (
               <button
@@ -709,8 +698,8 @@ export function ControlPanel({
           /* Multi-Frame Animation Export Panel */
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-[#94A3B8] whitespace-nowrap">Sheet 排列欄數</span>
-              <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
+              <span className="text-xs text-[#94A3B8] whitespace-nowrap">{t('panel.sheetCols')}</span>
+              <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5 overflow-x-auto studio-scroll">
                 {[0, -1, 2, 4, 8, 16]
                   .filter((c) => c <= 0 || c <= frameCount)
                   .map((c) => {
@@ -726,7 +715,11 @@ export function ControlPanel({
                             : 'text-[#8B95A8] hover:text-[#CBD5E1]'
                         }`}
                       >
-                        {c === 0 ? `自動(${sheetLayout?.columns ?? 1}欄)` : c === -1 ? `單排(${frameCount})` : `${c}欄`}
+                        {c === 0
+                          ? t('panel.sheetAuto', { cols: sheetLayout?.columns ?? 1 })
+                          : c === -1
+                            ? t('panel.sheetSingleRow', { count: frameCount })
+                            : t('panel.sheetColsN', { cols: c })}
                       </button>
                     );
                   })}
@@ -745,7 +738,13 @@ export function ControlPanel({
 
             {sheetLayout && !sheetLayout.isWithinLimits && (
               <p className="text-[11px] text-amber-300 leading-relaxed" role="alert">
-                {sheetLayout.errorMessage}
+                {t('error.sheetOversize', {
+                  width: sheetLayout.width.toLocaleString(locale),
+                  height: sheetLayout.height.toLocaleString(locale),
+                  pixels: sheetLayout.pixelCount.toLocaleString(locale),
+                  maxSide: MAX_SPRITE_SHEET_SIDE.toLocaleString(locale),
+                  maxPixels: MAX_SPRITE_SHEET_PIXELS.toLocaleString(locale),
+                })}
               </p>
             )}
 
@@ -757,7 +756,7 @@ export function ControlPanel({
                 className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
               >
                 <Film className="w-3.5 h-3.5 text-sky-400" />
-                動態 GIF ({fps} FPS)
+                {t('panel.exportGif', { fps })}
               </button>
 
               <button
@@ -767,7 +766,7 @@ export function ControlPanel({
                 className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
               >
                 <FolderArchive className="w-3.5 h-3.5 text-sky-400" />
-                影格 ZIP ({frameCount}張)
+                {t('panel.exportZip', { count: frameCount })}
               </button>
             </div>
 
@@ -778,7 +777,7 @@ export function ControlPanel({
                 onClick={onDownloadPng}
                 className="hover:text-sky-300 transition-colors cursor-pointer"
               >
-                下載目前單格 PNG
+                {t('panel.downloadCurrentFrame')}
               </button>
               <button
                 type="button"
@@ -786,7 +785,7 @@ export function ControlPanel({
                 onClick={handleCopyImageClick}
                 className="hover:text-sky-300 transition-colors cursor-pointer"
               >
-                {copiedImg ? '已複製目前單格' : '複製目前單格'}
+                {copiedImg ? t('panel.copiedCurrentFrame') : t('panel.copyCurrentFrame')}
               </button>
             </div>
           </div>
@@ -800,25 +799,28 @@ export function ControlPanel({
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              下載 PNG ({config.targetW * exportScale}×{config.targetH * exportScale})
+              {t('panel.downloadPng', {
+                w: config.targetW * exportScale,
+                h: config.targetH * exportScale,
+              })}
             </button>
 
             <button
               type="button"
               disabled={!result}
               onClick={handleCopyImageClick}
-              title="複製 PNG 到剪貼簿"
+              title={t('panel.copyPngTitle')}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] disabled:opacity-40 rounded-md transition-colors whitespace-nowrap cursor-pointer"
             >
               {copiedImg ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  已複製
+                  {t('panel.copied')}
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5" />
-                  複製
+                  {t('panel.copy')}
                 </>
               )}
             </button>

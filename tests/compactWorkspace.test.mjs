@@ -14,7 +14,7 @@ test('one scrollable toolbar includes animation transport, without a separate pl
   assert.match(viewport, /onStepFrame\(-1\)/);
   assert.match(viewport, /onStepFrame\(1\)/);
   assert.match(viewport, /FPS_PRESETS\.map/);
-  assert.match(viewport, /自訂播放速度（1 至 30 FPS）/);
+  assert.match(viewport, /toolbar\.fpsInputAria/);
 });
 
 test('removes duplicate size buttons and preserves right-panel size controls', () => {
@@ -25,7 +25,7 @@ test('removes duplicate size buttons and preserves right-panel size controls', (
 
 test('single-frame hint uses a compact timeline row, multi-frame uses thumbnails', () => {
   assert.doesNotMatch(viewport, /Single-Frame Hint inside Animate Mode/);
-  assert.match(timeline, /加入更多影格即可播放動畫/);
+  assert.match(timeline, /timeline\.singleHint/);
   assert.match(timeline, /!isSingleFrame && \(/);
   assert.match(timeline, /w-\[52px\]/);
   assert.match(timeline, /h-\[38px\]/);
@@ -42,8 +42,8 @@ test('moving controls keeps upload, timeline interactions and manual edit naviga
 
 test('fixed shortcut footer becomes accessible help and live coordinate overlay', () => {
   assert.doesNotMatch(viewport, /Bottom Contextual Hint & Live Pixel Coordinate Bar/);
-  assert.match(viewport, /aria-label="查看操作快捷鍵"/);
-  assert.match(viewport, /role="dialog" aria-label="操作快捷鍵說明"/);
+  assert.match(viewport, /aria-label=\{t\('toolbar\.shortcutsAria'\)\}/);
+  assert.match(viewport, /role="dialog" aria-label=\{t\('shortcuts\.dialogAria'\)\}/);
   assert.match(viewport, /viewMode === 'edit' && hoverPixel/);
   assert.match(viewport, /X:\{hoverPixel\.x\} Y:\{hoverPixel\.y\}/);
 });
@@ -63,8 +63,8 @@ test('crop preview draws decoded sourceImage onto canvas instead of reusing revo
 });
 
 test('frame deletion shows nearby confirmation popover with skip option and supports Ctrl+Z restore', () => {
-  assert.match(timeline, /aria-label="確認刪除影格"/);
-  assert.match(timeline, /本次不再詢問/);
+  assert.match(timeline, /aria-label=\{t\('timeline\.confirmAria'\)\}/);
+  assert.match(timeline, /timeline\.dontAskAgain/);
   assert.match(app, /type: 'delete-frame'/);
   assert.match(app, /handleGlobalUndo/);
 });

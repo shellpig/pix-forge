@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export interface TimelineFramePreview {
   id: string;
@@ -56,6 +57,7 @@ export function FrameTimelineBar({
   onDeleteFrame,
   onAppendFiles,
 }: FrameTimelineBarProps) {
+  const { t } = useI18n();
   const appendInputRef = useRef<HTMLInputElement | null>(null);
   const confirmPopoverRef = useRef<HTMLDivElement | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -119,7 +121,7 @@ export function FrameTimelineBar({
 
       <div className={'flex items-center justify-between gap-2 ' + (isSingleFrame ? '' : 'mb-1')}>
         <div className="flex min-w-0 items-center gap-2 text-[11px] text-[#94A3B8]">
-          <span className="font-medium text-[#E2E8F0]">影格時間軸</span>
+          <span className="font-medium text-[#E2E8F0]">{t('timeline.title')}</span>
           <span aria-hidden="true">·</span>
           <span className="font-mono tabular-nums text-sky-300">
             {activeIdx >= 0 ? String(activeIdx + 1).padStart(2, '0') : '--'} /{' '}
@@ -127,9 +129,7 @@ export function FrameTimelineBar({
           </span>
           <span aria-hidden="true" className="hidden sm:inline">·</span>
           <span className="min-w-0 truncate text-[11px] text-[#7A879C]">
-            {isSingleFrame
-              ? '加入更多影格即可播放動畫'
-              : '拖曳排序 · 點選切換影格 · 雙擊精修'}
+            {isSingleFrame ? t('timeline.singleHint') : t('timeline.multiHint')}
           </span>
         </div>
 
@@ -139,7 +139,7 @@ export function FrameTimelineBar({
           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Plus className="w-3 h-3 text-sky-400" />
-          追加影格
+          {t('timeline.appendBtn')}
         </button>
       </div>
 
@@ -181,7 +181,7 @@ export function FrameTimelineBar({
               }}
               onClick={() => onSelectFrame(frame.id)}
               onDoubleClick={() => onEditFrame(frame.id)}
-              title={`${frame.name}（雙擊進入像素精修，拖曳可調整順序）`}
+              title={t('timeline.frameTitle', { name: frame.name })}
               className={`group relative shrink-0 w-[52px] rounded border transition-all cursor-pointer select-none ${
                 isActive
                   ? 'border-sky-400 bg-[#172130]'
@@ -198,7 +198,7 @@ export function FrameTimelineBar({
                 <div className="absolute top-0.5 right-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
-                    title="針對這格進行像素精修"
+                    title={t('timeline.editFrameTitle')}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditFrame(frame.id);
@@ -210,7 +210,7 @@ export function FrameTimelineBar({
                   {frames.length > 1 && (
                     <button
                       type="button"
-                      title="刪除此影格"
+                      title={t('timeline.deleteFrameTitle')}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (skipDeleteConfirm) {
@@ -249,8 +249,8 @@ export function FrameTimelineBar({
                   #{String(index + 1).padStart(2, '0')}
                 </span>
                 {frame.hasManualEdits && (
-                  <span className="text-[9px] font-sans text-amber-300" title="此影格已手動修圖">
-                    已修
+                  <span className="text-[9px] font-sans text-amber-300" title={t('timeline.editedTitle')}>
+                    {t('timeline.editedBadge')}
                   </span>
                 )}
               </div>
@@ -265,7 +265,7 @@ export function FrameTimelineBar({
           className="shrink-0 w-[52px] h-[52px] rounded border border-dashed border-[#2D3546] hover:border-sky-400/60 bg-[#12161F] hover:bg-[#171C28] flex flex-col items-center justify-center gap-1 text-[#8B95A8] hover:text-sky-300 transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span className="text-[10px]">加影格</span>
+          <span className="text-[10px]">{t('timeline.addCard')}</span>
         </button>
         </div>
       )}
@@ -274,19 +274,19 @@ export function FrameTimelineBar({
         <div
           ref={confirmPopoverRef}
           role="dialog"
-          aria-label="確認刪除影格"
+          aria-label={t('timeline.confirmAria')}
           style={{
             left: pendingDelete.anchorX,
             top: pendingDelete.anchorY,
             transform: 'translate(-50%, -100%)',
           }}
-          className="fixed z-50 w-[216px] p-2.5 bg-[#151B26] border border-[#364056] rounded-md shadow-2xl text-xs text-[#E2E8F0]"
+          className="fixed z-50 w-[224px] p-2.5 bg-[#151B26] border border-[#364056] rounded-md shadow-2xl text-xs text-[#E2E8F0]"
         >
           <p className="font-medium text-[#F8FAFC]">
-            確定刪除第 #{String(pendingDelete.frameNumber).padStart(2, '0')} 格？
+            {t('timeline.confirmTitle', { num: String(pendingDelete.frameNumber).padStart(2, '0') })}
           </p>
           <p className="mt-0.5 text-[11px] text-[#94A3B8]">
-            刪除後可按 Ctrl+Z 復原
+            {t('timeline.confirmSub')}
           </p>
           <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-[#CBD5E1] cursor-pointer select-none">
             <input
@@ -295,7 +295,7 @@ export function FrameTimelineBar({
               onChange={(e) => setDontAskChecked(e.target.checked)}
               className="accent-sky-400 cursor-pointer"
             />
-            本次不再詢問
+            {t('timeline.dontAskAgain')}
           </label>
           <div className="mt-2.5 flex items-center justify-end gap-1.5">
             <button
@@ -303,7 +303,7 @@ export function FrameTimelineBar({
               onClick={() => setPendingDelete(null)}
               className="px-2 py-1 text-[11px] text-[#CBD5E1] bg-[#1D2433] hover:bg-[#263044] border border-[#2D3546] rounded cursor-pointer"
             >
-              取消
+              {t('timeline.cancel')}
             </button>
             <button
               type="button"
@@ -315,7 +315,7 @@ export function FrameTimelineBar({
               }}
               className="px-2.5 py-1 text-[11px] font-medium text-white bg-rose-500 hover:bg-rose-400 rounded cursor-pointer"
             >
-              刪除
+              {t('timeline.delete')}
             </button>
           </div>
         </div>

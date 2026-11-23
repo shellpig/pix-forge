@@ -1,0 +1,251 @@
+import type { TranslationDict } from './zh-TW';
+
+export const en: TranslationDict = {
+  // App / Meta
+  'app.title': 'PixForge — High-Res to Pixel Art Studio',
+  'app.close': 'Close',
+  'app.langAria': 'Switch interface language',
+
+  // View Tabs
+  'tab.sideBySide': 'Side by Side',
+  'tab.split': 'Split Compare',
+  'tab.pixel': 'Pixel Only',
+  'tab.crop': 'Crop',
+  'tab.edit': 'Pixel Edit',
+  'tab.animate': 'Animate',
+
+  // Built-in Samples
+  'sample.rpgKnight': 'Sample: Knight Portrait (1:1)',
+  'sample.fantasyTavern': 'Sample: Alchemy Hut (4:3)',
+  'sample.prefix': 'Sample: ',
+  'sample.clipboardName': 'clipboard.png',
+
+  // App Errors
+  'error.imageLoad': 'Failed to load image',
+  'error.sampleLoad': 'Failed to load sample image.',
+  'error.uploadRead': 'Some images could not be read. Please use PNG / JPG / WebP.',
+  'error.batchConvert': 'Batch conversion error occurred',
+  'error.downloadPng': 'Failed to export PNG. Please try again.',
+  'error.clipboardWrite': 'Clipboard image copy is blocked by this browser. Please use Download.',
+  'error.exportSheet': 'Failed to export Sprite Sheet. Please try again.',
+  'error.exportGif': 'Failed to export animated GIF. Please try again.',
+  'error.exportZip': 'Failed to create ZIP archive. Please try again.',
+  'error.sheetOversize':
+    'Sprite Sheet size {width}×{height} ({pixels} px) exceeds safe limits: max {maxSide}px per side and {maxPixels} total pixels. Lower the export scale or adjust column count.',
+
+  // Canvas Toolbar
+  'toolbar.upload': 'Upload',
+  'toolbar.uploadTitle': 'Upload a single image or select multiple frames to create an animation',
+  'toolbar.sampleAria': 'Load built-in sample image',
+  'toolbar.sampleTitle': 'Select a sample image (replaces current frame)',
+  'toolbar.samplePlaceholder': 'Samples',
+  'toolbar.prevFrame': 'Previous frame',
+  'toolbar.prevFrameTitle': 'Previous frame (←)',
+  'toolbar.nextFrame': 'Next frame',
+  'toolbar.nextFrameTitle': 'Next frame (→)',
+  'toolbar.play': 'Play',
+  'toolbar.pause': 'Pause',
+  'toolbar.playTitle': 'Play (Space)',
+  'toolbar.pauseTitle': 'Pause (Space)',
+  'toolbar.fpsInputAria': 'Custom playback speed (1 to 30 FPS)',
+  'toolbar.editCurrent': 'Edit',
+  'toolbar.editCurrentTitle': 'Open current frame in Pixel Edit',
+  'toolbar.batchProcessing': 'Converting…',
+  'toolbar.gridOn': 'Grid On',
+  'toolbar.gridOff': 'Grid Off',
+  'toolbar.gridTitle': 'Toggle pixel grid (with 8×8 block guides)',
+  'toolbar.backdropAria': 'Canvas background',
+  'toolbar.backdropTitle': 'Switch between checkerboard, dark, or light backdrop',
+  'toolbar.backdropChecker': 'Checker',
+  'toolbar.backdropDark': 'Dark',
+  'toolbar.backdropLight': 'Light',
+  'toolbar.zoomOut': 'Zoom out',
+  'toolbar.zoomIn': 'Zoom in',
+  'toolbar.zoomResetTitle': 'Reset zoom to fit',
+  'toolbar.shortcutsAria': 'View keyboard shortcuts',
+
+  // Pending Reconversion Banner
+  'reconvert.notice':
+    'Conversion settings or frames changed. Manual pixel edits are preserved; applying reconversion will overwrite them.',
+  'reconvert.apply': 'Apply Reconversion',
+  'reconvert.keep': 'Keep Manual Edits',
+
+  // Empty / Drop Stage
+  'stage.emptyTitle': 'Click to upload an image or multiple animation frames',
+  'stage.emptyDesc': 'Supports PNG / JPG / WebP. Drag & drop or press Ctrl+V to paste.',
+  'stage.dropOverlay': 'Drop to load a single image or animation sequence',
+
+  // Crop Mode
+  'crop.hintPrefix': 'Drag the crop box or corners — aspect ratio is locked to',
+  'crop.hintMulti': ' (applied to all frames)',
+  'crop.center': 'Center Fit',
+  'crop.done': 'Done',
+  'crop.previewAria': 'Source crop preview',
+
+  // Edit Mode Captions
+  'edit.framePrefix': 'Frame {n} · ',
+  'edit.title.pencil': 'Pencil',
+  'edit.title.eraser': 'Eraser',
+  'edit.title.eyedropper': 'Eyedropper',
+  'edit.title.bucket': 'Fill Bucket',
+  'edit.title.wand': 'Magic Wand',
+  'edit.hint.pencil': 'L-Click Paint · R-Click Erase',
+  'edit.hint.eraser': 'L-Click Drag to Erase',
+  'edit.hint.eyedropper': 'Click Pixel to Sample',
+  'edit.hint.bucket': 'Click Region to Fill',
+  'edit.hint.wand': 'Click Background to Clear',
+  'edit.hint.zoomPan': ' · Wheel Zoom · Mid-Drag Pan',
+  'edit.transparentPixel': 'Transparent',
+
+  // Other Stage Headers
+  'animate.playing': 'Playing ({fps} FPS)',
+  'animate.paused': 'Paused',
+  'compare.sourceTitle': 'Original (Cropped)',
+  'compare.pixelTitle': 'Pixel Result',
+  'compare.editedSuffix': ' (Edited)',
+  'split.left': 'Left: Original',
+  'split.middle': 'Drag divider to compare details',
+  'split.right': 'Right: Pixel ({w}×{h})',
+  'pixel.previewTitle': 'Pixel Preview',
+
+  // Shortcut Help Dialog
+  'shortcuts.dialogAria': 'Keyboard shortcuts',
+  'shortcuts.title': 'Keyboard Shortcuts',
+  'shortcuts.closeAria': 'Close shortcuts help',
+  'shortcuts.global': 'Ctrl+V: Paste image. Drop multiple images to build an animation.',
+  'shortcuts.animate': 'Space: Play/Pause; ←/→: Step frame; Double-click thumb: Edit frame.',
+  'shortcuts.edit':
+    'B: Pencil; E: Eraser; I: Eyedropper; G: Bucket; W: Wand; Wheel: Zoom; Mid-Drag: Pan; Ctrl+Z: Undo; Ctrl+Y: Redo; Right-Click: Erase; Alt+Click: Pick Color.',
+
+  // Real Size Preview Panel
+  'realSize.title': 'Actual Size',
+  'realSize.liveTitle': '1:1 Live ({fps} FPS)',
+  'realSize.collapseAria': 'Collapse actual size preview',
+  'realSize.expandAria': 'Expand actual size preview',
+
+  // Pixel Editor Bar
+  'editor.tool.pencil': 'Pencil',
+  'editor.tool.pencilTitle': 'Pixel Pencil (B) — Click or drag to paint',
+  'editor.tool.eraser': 'Eraser',
+  'editor.tool.eraserTitle': 'Eraser (E) — Click or drag to erase to transparent',
+  'editor.tool.eyedropper': 'Picker',
+  'editor.tool.eyedropperTitle': 'Eyedropper (I or Alt+Click)',
+  'editor.tool.bucket': 'Fill',
+  'editor.tool.bucketTitle': 'Fill Bucket (G)',
+  'editor.tool.wand': 'Wand BG',
+  'editor.tool.wandTitle': 'Magic Wand (W) — Clear matching background region',
+  'editor.colorTitle': 'Choose active brush / fill color',
+  'editor.brush': 'Size',
+  'editor.tolerance': 'Tol',
+  'editor.contiguousTitle': 'Contiguous: connected pixels only; Global: all similar colors in image',
+  'editor.contiguousOn': 'Contiguous',
+  'editor.contiguousOff': 'Global',
+  'editor.autoBg': 'Auto BG',
+  'editor.autoBgTitle': 'Auto-detect and remove corner background (Undo with Ctrl+Z)',
+  'editor.undo': 'Undo',
+  'editor.undoTitle': 'Undo (Ctrl+Z)',
+  'editor.redo': 'Redo',
+  'editor.redoTitle': 'Redo (Ctrl+Y)',
+  'editor.resetEdits': 'Reset ({count})',
+  'editor.resetEditsTitle': 'Discard all manual edits and restore auto-converted result',
+  'editor.quickPalette': 'Palette',
+  'editor.pickColorTitle': 'Select color {hex}',
+
+  // Frame Timeline Bar
+  'timeline.title': 'Timeline',
+  'timeline.singleHint': 'Add more frames to play animation',
+  'timeline.multiHint': 'Drag to reorder · Click to select · Double-click to edit',
+  'timeline.appendBtn': 'Add Frames',
+  'timeline.frameTitle': '{name} (Double-click to edit, drag to reorder)',
+  'timeline.editFrameTitle': 'Edit this frame',
+  'timeline.deleteFrameTitle': 'Delete frame',
+  'timeline.editedBadge': 'Edit',
+  'timeline.editedTitle': 'Manually edited frame',
+  'timeline.addCard': 'Add',
+  'timeline.confirmAria': 'Confirm frame deletion',
+  'timeline.confirmTitle': 'Delete frame #{num}?',
+  'timeline.confirmSub': 'Press Ctrl+Z to restore after deleting',
+  'timeline.dontAskAgain': "Don't ask again this session",
+  'timeline.cancel': 'Cancel',
+  'timeline.delete': 'Delete',
+
+  // Control Panel
+  'panel.resolution': 'Output Resolution',
+  'panel.resolutionShared': ' (All Frames)',
+  'panel.adjustCrop': 'Crop Box',
+  'panel.width': 'Width (W)',
+  'panel.height': 'Height (H)',
+  'panel.swapTitle': 'Swap width and height',
+  'panel.lockTitle': 'Aspect ratio locked to source',
+  'panel.unlockTitle': 'Free aspect ratio (auto center crop)',
+  'panel.squarePresets': 'Square Presets',
+  'panel.rectPresets': 'Non-Square (Auto Center Crop)',
+
+  'panel.algorithm': 'Downscale & Outline',
+  'panel.reset': 'Reset',
+  'panel.algo.cleanSprite': 'Clean Sprite (Rec)',
+  'panel.algo.cleanSpriteDesc':
+    'Dominant color clustering + smooth-area softening + chroma focus protection (keeps eyes and faces crisp).',
+  'panel.algo.pixeloe': 'LAB Split',
+  'panel.algo.pixeloeDesc':
+    'Separates lightness and chroma to sharpen outlines while keeping base colors clean. Great for line art.',
+  'panel.algo.kCentroid': 'K-Centroid Sharp',
+  'panel.algo.kCentroidDesc':
+    'Dual-color clustering picks dominant blocks and removes anti-aliased fringes. Ideal for cel-shaded sprites.',
+  'panel.algo.area': 'Soft Area Scale',
+  'panel.algo.areaDesc':
+    'Progressive high-quality area averaging that faithfully preserves soft gradients at 64×64 and above.',
+  'panel.smoothness': 'Block Smoothing',
+  'panel.outlineStrength': 'Outline Emphasis',
+  'panel.preSharpen': 'Edge Sharpen',
+
+  'panel.paletteSection': 'Quantization & Palette (OKLab)',
+  'panel.paletteAuto': 'Auto',
+  'panel.palettePreset': 'Presets',
+  'panel.paletteFull': 'Full Color',
+  'panel.sharedPalette': 'Shared Sequence Palette',
+  'panel.sharedPaletteOn': 'Extract one unified palette across all frames to prevent color flicker.',
+  'panel.sharedPaletteOff': 'Compute an independent palette per frame (for vastly different scenes).',
+  'panel.maxColors': 'Max Colors',
+  'panel.colorCount': '{count} colors',
+  'panel.dither': 'Dithering',
+  'panel.ditherNone': 'Off',
+  'panel.ditherStrength': 'Dither Strength',
+
+  'panel.cleanup': 'Speckle Cleanup',
+  'panel.cleanupAria': 'Isolated pixel cleanup strength',
+  'panel.cleanupOff': 'Off',
+  'panel.cleanupLight': 'Light',
+  'panel.cleanupStrong': 'Strong',
+  'panel.cleanupDisabledDither':
+    'Dithering is active: cleanup is paused to preserve dither patterns and restores when dithering is off.',
+  'panel.cleanupLightDesc':
+    'Replaces isolated pixels with ≥4 matching neighbors (Oklab Δ ≤ 0.2), protecting highlights and darks.',
+  'panel.cleanupStrongDesc':
+    'Replaces isolated pixels with ≥3 matching neighbors (Oklab Δ ≤ 0.3), while protecting luminance extremes.',
+  'panel.cleanupOffDesc': 'Keep raw quantized output without isolated pixel cleanup.',
+
+  'panel.outputPalette': 'Output Palette ({count} colors)',
+  'panel.copiedHex': 'Picked {hex}',
+  'panel.clickToCopyHex': 'Click to pick / copy',
+
+  'panel.toneSection': 'Tone & Alpha Cutoff',
+  'panel.contrast': 'Contrast',
+  'panel.saturation': 'Saturation',
+  'panel.alphaCutoff': 'Alpha Cutoff',
+
+  'panel.exportScale': 'Export Scale',
+  'panel.sheetCols': 'Sheet Columns',
+  'panel.sheetAuto': 'Auto({cols})',
+  'panel.sheetSingleRow': '1 Row({count})',
+  'panel.sheetColsN': '{cols} Cols',
+  'panel.exportGif': 'GIF ({fps} FPS)',
+  'panel.exportZip': 'ZIP ({count}f)',
+  'panel.downloadCurrentFrame': 'Download Current PNG',
+  'panel.copyCurrentFrame': 'Copy Current Frame',
+  'panel.copiedCurrentFrame': 'Frame Copied',
+  'panel.downloadPng': 'Download PNG ({w}×{h})',
+  'panel.copyPngTitle': 'Copy PNG to clipboard',
+  'panel.copy': 'Copy',
+  'panel.copied': 'Copied',
+};
