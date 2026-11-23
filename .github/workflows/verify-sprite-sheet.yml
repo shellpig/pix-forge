@@ -1,0 +1,47 @@
+name: Temporary Sprite Sheet regression verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-sprite-sheet.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run all unit and regression tests
+        run: npm test
+      - name: TypeScript check
+        run: npm run lint
+      - name: Vite production build
+        run: npm run build
+      - name: Verify static assets and worker still bundle
+        run: |
+          test -f dist/index.html
+          test -f dist/src/assets/images/sample_rpg_knight_1795397004570.jpg
+          find dist -type f | grep -E 'pixelConversion.worker|worker-'
+      - name: Verify panel, main export and engine use shared layout
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const app=fs.readFileSync('src/App.tsx','utf8');
+          const panel=fs.readFileSync('src/components/ControlPanel.tsx','utf8');
+          const exporter=fs.readFileSync('src/lib/animationExport.ts','utf8');
+          assert.ok(app.includes('getSpriteSheetLayout('));
+          assert.ok(panel.includes('getSpriteSheetLayout('));
+          assert.ok(exporter.includes('getSpriteSheetLayout('));
+          assert.ok(panel.includes('sheetLayout.errorMessage'));
+          assert.ok(app.includes('setErrorMsg(layout.errorMessage)'));
+          console.log('All Sprite Sheet UI integration guards passed.');
+          NODE
