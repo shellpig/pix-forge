@@ -61,6 +61,7 @@ export function FrameTimelineBar({
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   const activeIdx = frames.findIndex((f) => f.id === activeFrameId);
+  const isSingleFrame = frames.length <= 1;
 
   const handleAppendChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files ? Array.from(e.target.files) : [];
@@ -71,7 +72,7 @@ export function FrameTimelineBar({
   };
 
   return (
-    <div className="border-t border-[#222733] bg-[#0F1218] px-3.5 py-2 shrink-0">
+    <div className={'border-t border-[#222733] bg-[#0F1218] px-3 shrink-0 ' + (isSingleFrame ? 'py-1' : 'py-1.5')}>
       <input
         ref={appendInputRef}
         type="file"
@@ -81,8 +82,8 @@ export function FrameTimelineBar({
         onChange={handleAppendChange}
       />
 
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
+      <div className={'flex items-center justify-between gap-2 ' + (isSingleFrame ? '' : 'mb-1')}>
+        <div className="flex min-w-0 items-center gap-2 text-[11px] text-[#94A3B8]">
           <span className="font-medium text-[#E2E8F0]">影格時間軸</span>
           <span aria-hidden="true">·</span>
           <span className="font-mono tabular-nums text-sky-300">
@@ -90,10 +91,10 @@ export function FrameTimelineBar({
             {String(frames.length).padStart(2, '0')}
           </span>
           <span aria-hidden="true" className="hidden sm:inline">·</span>
-          <span className="hidden sm:inline text-[11px] text-[#7A879C]">
-            {frames.length <= 1
+          <span className="min-w-0 truncate text-[11px] text-[#7A879C]">
+            {isSingleFrame
               ? '加入更多影格即可播放動畫'
-              : '拖曳縮圖調整順序 · 點選單格切換檢視或雙擊進入精修'}
+              : '拖曳排序 · 點選切換影格 · 雙擊精修'}
           </span>
         </div>
 
@@ -107,7 +108,8 @@ export function FrameTimelineBar({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto studio-scroll pb-1">
+      {!isSingleFrame && (
+        <div className="flex items-center gap-2 overflow-x-auto studio-scroll pb-1">
         {frames.map((frame, index) => {
           const isActive = frame.id === activeFrameId;
           const isDragging = dragIndex === index;
@@ -214,7 +216,8 @@ export function FrameTimelineBar({
           <Plus className="w-4 h-4" />
           <span className="text-[10px]">加影格</span>
         </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
