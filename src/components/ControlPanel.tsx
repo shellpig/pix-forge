@@ -13,6 +13,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { PRESET_PALETTES } from '../lib/palettes';
+import { getSpriteSheetLayout } from '../lib/spriteSheetLayout';
 import {
   DitherMode,
   DownscaleMode,
@@ -155,11 +156,12 @@ export function ControlPanel({
 
   const activeDownscale = DOWNSCALE_OPTIONS.find((o) => o.id === config.downscaleMode);
 
-  const effectiveCols =
-    spriteSheetCols <= 0 || spriteSheetCols > frameCount ? Math.max(1, frameCount) : spriteSheetCols;
-  const effectiveRows = Math.max(1, Math.ceil(frameCount / effectiveCols));
-  const sheetW = config.targetW * exportScale * effectiveCols;
-  const sheetH = config.targetH * exportScale * effectiveRows;
+  const sheetLayout =
+    frameCount > 0
+      ? getSpriteSheetLayout(config.targetW, config.targetH, frameCount, exportScale, spriteSheetCols)
+      : null;
+  const sheetW = sheetLayout?.width ?? 0;
+  const sheetH = sheetLayout?.height ?? 0;
 
   return (
     <aside className="w-full md:w-[308px] xl:w-[356px] shrink-0 border-t md:border-t-0 md:border-l border-[#222733] bg-[#11141B] flex flex-col min-h-0">
@@ -668,8 +670,8 @@ export function ControlPanel({
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-[#94A3B8] whitespace-nowrap">Sheet 排列欄數</span>
               <div className="flex items-center bg-[#161A23] border border-[#252B39] rounded p-0.5">
-                {[0, 2, 4, 8]
-                  .filter((c) => c === 0 || c < frameCount)
+                {[0, -1, 2, 4, 8, 16]
+                  .filter((c) => c <= 0 || c <= frameCount)
                   .map((c) => {
                     const active = spriteSheetCols === c;
                     return (
@@ -683,7 +685,7 @@ export function ControlPanel({
                             : 'text-[#8B95A8] hover:text-[#CBD5E1]'
                         }`}
                       >
-                        {c === 0 ? `單排(${frameCount})` : `${c}欄`}
+                        {c === 0 ? `自動(${sheetLayout?.columns ?? 1}欄)` : c === -1 ? `單排(${frameCount})` : `${c}欄`}
                       </button>
                     );
                   })}
@@ -699,6 +701,12 @@ export function ControlPanel({
               <LayoutGrid className="w-3.5 h-3.5" />
               Sprite Sheet PNG ({sheetW}×{sheetH})
             </button>
+
+            {sheetLayout && !sheetLayout.isWithinLimits && (
+              <p className="text-[11px] text-amber-300 leading-relaxed" role="alert">
+                {sheetLayout.errorMessage}
+              </p>
+            )}
 
             <div className="grid grid-cols-2 gap-1.5">
               <button
