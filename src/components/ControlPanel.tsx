@@ -68,11 +68,11 @@ const DOWNSCALE_OPTIONS: Array<{ id: DownscaleMode; label: string; desc: string 
   {
     id: 'clean-sprite',
     label: '精緻角色 (推薦)',
-    desc: '雙邊濾波去雜訊＋主色聚類＋高彩焦點保護（保留瞳孔與臉部乾淨色塊，不黑糊）。',
+    desc: '主色聚類＋平滑區自動柔化＋高彩焦點保護（保留瞳孔與臉部乾淨色塊，不黑糊）。',
   },
   {
     id: 'pixeloe',
-    label: 'PixelOE (LAB 分離)',
+    label: 'LAB 分離',
     desc: '將明暗與色相分離運算，僅強化輪廓明暗、維持原色乾淨，適合細線插畫。',
   },
   {

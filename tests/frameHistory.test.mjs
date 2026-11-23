@@ -1,10 +1,35 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import {
+import test, { after } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { build } from 'vite';
+
+// Bundle just the history helper using the project's existing Vite toolchain,
+// so the regression tests continue to work without an extra tsx dependency.
+const testDist = await mkdtemp(join(tmpdir(), 'pix-forge-history-'));
+after(() => rm(testDist, { recursive: true, force: true }));
+await build({
+  configFile: false,
+  publicDir: false,
+  logLevel: 'error',
+  build: {
+    outDir: testDist,
+    emptyOutDir: false,
+    minify: false,
+    lib: {
+      entry: resolve('src/lib/frameHistory.ts'),
+      formats: ['es'],
+      fileName: () => 'frameHistory.mjs',
+    },
+  },
+});
+const {
   appendFrameEdit,
   applyFrameConversion,
   getEffectiveFrameImageData,
-} from '../src/lib/frameHistory.ts';
+} = await import(pathToFileURL(join(testDist, 'frameHistory.mjs')).href);
 
 class TestImageData {
   constructor(data, width, height) {

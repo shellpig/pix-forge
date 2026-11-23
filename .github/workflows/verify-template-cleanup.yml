@@ -1,0 +1,59 @@
+name: Temporary AI Studio cleanup verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-template-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate lockfile from cleaned package manifest
+        run: npm install --package-lock-only --no-audit --no-fund
+      - name: Verify reproducible dependency install
+        run: npm ci --no-audit --no-fund
+      - name: Run retained frame history regression tests without tsx
+        run: npm test
+      - name: TypeScript check
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Assert clean manifest, source, and built assets
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          assert.equal(pkg.name, 'pix-forge');
+          assert.equal(lock.name, 'pix-forge');
+          assert.equal(lock.packages[''].name, 'pix-forge');
+          for (const p of ['@google/genai','express','dotenv','@types/express','tsx']) {
+            assert.equal(pkg.dependencies?.[p], undefined, 'Unexpected direct dependency '+p);
+            assert.equal(pkg.devDependencies?.[p], undefined, 'Unexpected direct devDependency '+p);
+            assert.equal(lock.packages[''].dependencies?.[p], undefined, 'Unexpected locked root dependency '+p);
+            assert.equal(lock.packages[''].devDependencies?.[p], undefined, 'Unexpected locked root devDependency '+p);
+          }
+          assert.equal(fs.existsSync('.env.example'), false);
+          assert.equal(fs.existsSync('public/assets/aistudio'), false);
+          assert.equal(fs.existsSync('dist/assets/aistudio'), false);
+          const ui = fs.readFileSync('src/components/ControlPanel.tsx','utf8');
+          assert.ok(ui.includes('主色聚類＋平滑區自動柔化＋高彩焦點保護'));
+          assert.ok(ui.includes("label: 'LAB 分離'"));
+          console.log('Template cleanup verified.');
+          NODE
+      - name: Commit verified lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build: update npm lockfile after template cleanup"
+          git push
