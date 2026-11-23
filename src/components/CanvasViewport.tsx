@@ -79,21 +79,11 @@ interface CanvasViewportProps {
   onApplyPendingReconvert: () => void;
   onDismissPendingReconvert: () => void;
   onChangeCrop: (crop: CropRect) => void;
-  onSelectDimensions: (w: number, h: number) => void;
   samples: SampleItem[];
   activeSampleId: string | null;
   onSelectSample: (sample: SampleItem) => void;
   onChangeViewMode: (mode: ViewMode) => void;
 }
-
-const QUICK_RES_BUTTONS: Array<[number, number]> = [
-  [16, 16],
-  [32, 32],
-  [48, 48],
-  [64, 64],
-  [96, 96],
-  [128, 128],
-];
 
 const FPS_PRESETS = [6, 8, 12, 15, 24];
 
@@ -219,7 +209,6 @@ export function CanvasViewport({
   onApplyPendingReconvert,
   onDismissPendingReconvert,
   onChangeCrop,
-  onSelectDimensions,
   samples,
   activeSampleId,
   onSelectSample,
@@ -696,29 +685,6 @@ export function CanvasViewport({
           </button>
 
           <div className="h-4 w-px bg-[#262B38] mx-0.5" aria-hidden="true" />
-
-          {/* Quick Resolution Switcher */}
-          <div className="flex items-center bg-[#161A23] border border-[#262B38] rounded-md p-0.5">
-            {QUICK_RES_BUTTONS.map(([w, h]) => {
-              const active = config.targetW === w && config.targetH === h;
-              return (
-                <button
-                  key={`${w}x${h}`}
-                  type="button"
-                  onClick={() => onSelectDimensions(w, h)}
-                  className={`px-2 py-1 text-[11px] font-mono tabular-nums rounded transition-colors whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-sky-500/20 text-sky-300 font-semibold'
-                      : 'text-[#94A3B8] hover:text-[#F1F5F9]'
-                  }`}
-                >
-                  {w}×{h}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="h-4 w-px bg-[#262B38] mx-0.5 hidden sm:block" aria-hidden="true" />
 
           <div className="flex items-center gap-1">
             {samples.map((s) => (

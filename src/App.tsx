@@ -921,7 +921,6 @@ export default function App() {
           onApplyPendingReconvert={clearAllManualEdits}
           onDismissPendingReconvert={() => setHasPendingReconvert(false)}
           onChangeCrop={handleChangeCrop}
-          onSelectDimensions={handleSelectDimensions}
           samples={BUILTIN_SAMPLES}
           activeSampleId={activeSampleId}
           onSelectSample={(s) => {
