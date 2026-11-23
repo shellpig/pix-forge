@@ -3,7 +3,6 @@ import {
   Grid3X3,
   ImagePlus,
   Maximize2,
-  Minimize2,
   MoveHorizontal,
   ZoomIn,
   ZoomOut,
@@ -12,14 +11,23 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { hexToRgb, rgbToHex } from '../lib/palettes';
 import {
   CropRect,
   PixelEngineConfig,
   PixelEngineResult,
   computeCenteredAspectCrop,
 } from '../lib/pixelEngine';
+import {
+  RGBA,
+  cloneImageData,
+  drawBrushStroke,
+  floodFillOrReplace,
+  getPixelAt,
+} from '../lib/pixelEditOps';
+import { PixelEditorBar, PixelEditorState } from './PixelEditorBar';
 
-export type ViewMode = 'side-by-side' | 'split' | 'pixel' | 'crop';
+export type ViewMode = 'side-by-side' | 'split' | 'pixel' | 'crop' | 'edit';
 export type BackdropMode = 'checker' | 'dark' | 'light';
 
 interface SampleItem {
@@ -34,6 +42,20 @@ interface CanvasViewportProps {
   result: PixelEngineResult | null;
   config: PixelEngineConfig;
   viewMode: ViewMode;
+  editor: PixelEditorState;
+  canUndo: boolean;
+  canRedo: boolean;
+  hasManualEdits: boolean;
+  editStepCount: number;
+  hasPendingReconvert: boolean;
+  onUpdateEditor: (patch: Partial<PixelEditorState>) => void;
+  onCommitImageData: (next: ImageData) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onAutoRemoveBg: () => void;
+  onResetEdits: () => void;
+  onApplyPendingReconvert: () => void;
+  onDismissPendingReconvert: () => void;
   onChangeCrop: (crop: CropRect) => void;
   onSelectDimensions: (w: number, h: number) => void;
   onUploadFile: (file: File) => void;
@@ -80,10 +102,8 @@ function PixelGridOverlay({
 
     const cellW = width / cols;
     const cellH = height / rows;
-    // Draw every pixel boundary when cells are >= 2.5px; otherwise draw every 2px/4px so lines stay clean & legible
     const step = cellW >= 2.5 && cellH >= 2.5 ? 1 : cellW >= 1.5 && cellH >= 1.5 ? 2 : 4;
 
-    // Pass 1: subtle dark hairline (visible on light backgrounds like sky/silver hair)
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(15, 23, 42, 0.42)';
     ctx.beginPath();
@@ -99,7 +119,6 @@ function PixelGridOverlay({
     }
     ctx.stroke();
 
-    // Pass 2: subtle light offset hairline when cells are spacious enough (visible on dark areas like navy cape)
     if (cellW >= 5 && cellH >= 5) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
       ctx.beginPath();
@@ -116,7 +135,6 @@ function PixelGridOverlay({
       ctx.stroke();
     }
 
-    // Pass 3: subtle 8x8 tile guide for sprite artists
     if (cols >= 16 && rows >= 16) {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
       ctx.beginPath();
@@ -150,6 +168,20 @@ export function CanvasViewport({
   result,
   config,
   viewMode,
+  editor,
+  canUndo,
+  canRedo,
+  hasManualEdits,
+  editStepCount,
+  hasPendingReconvert,
+  onUpdateEditor,
+  onCommitImageData,
+  onUndo,
+  onRedo,
+  onAutoRemoveBg,
+  onResetEdits,
+  onApplyPendingReconvert,
+  onDismissPendingReconvert,
   onChangeCrop,
   onSelectDimensions,
   onUploadFile,
@@ -165,14 +197,32 @@ export function CanvasViewport({
   const actual2xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [zoom, setZoom] = useState<number>(1); // 1 = fit nicely
+  const [zoom, setZoom] = useState<number>(1);
   const [showGrid, setShowGrid] = useState<boolean>(false);
+  const [hasEnteredEditOnce, setHasEnteredEditOnce] = useState<boolean>(false);
   const [backdrop, setBackdrop] = useState<BackdropMode>('checker');
   const [splitPos, setSplitPos] = useState<number>(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showRealSize, setShowRealSize] = useState<boolean>(true);
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+
+  // Live pixel editing refs (zero React re-render lag while dragging brush/eraser)
+  const workingImgRef = useRef<ImageData | null>(null);
+  const strokeActiveRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+    color: RGBA;
+    size: number;
+  }>({ active: false, lastX: 0, lastY: 0, color: { r: 0, g: 0, b: 0, a: 255 }, size: 1 });
+
+  const [hoverPixel, setHoverPixel] = useState<{
+    x: number;
+    y: number;
+    hex: string | null;
+    isTransparent: boolean;
+  } | null>(null);
 
   // Interactive crop state
   const cropBoxRef = useRef<HTMLDivElement | null>(null);
@@ -185,7 +235,15 @@ export function CanvasViewport({
     boxH: number;
   } | null>(null);
 
-  // Measure viewport container for crisp auto-fit sizing
+  // Auto-enable grid on first visit to Edit Mode so pixel cells are immediately clear
+  useEffect(() => {
+    if (viewMode === 'edit' && !hasEnteredEditOnce) {
+      setShowGrid(true);
+      setHasEnteredEditOnce(true);
+    }
+  }, [viewMode, hasEnteredEditOnce]);
+
+  // Measure viewport container
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -199,20 +257,24 @@ export function CanvasViewport({
     return () => ro.disconnect();
   }, []);
 
-  // Draw pixel art result onto main pixel canvas and 1:1/2:1 floating preview canvases
-  useEffect(() => {
-    if (!result) return;
+  const syncCanvasesWithImageData = (imgData: ImageData) => {
     const canvases = [pixelCanvasRef.current, actual1xCanvasRef.current, actual2xCanvasRef.current];
     for (const c of canvases) {
       if (!c) continue;
-      c.width = result.width;
-      c.height = result.height;
+      c.width = imgData.width;
+      c.height = imgData.height;
       const ctx = c.getContext('2d');
       if (ctx) {
-        ctx.clearRect(0, 0, result.width, result.height);
-        ctx.putImageData(result.imageData, 0, 0);
+        ctx.clearRect(0, 0, imgData.width, imgData.height);
+        ctx.putImageData(imgData, 0, 0);
       }
     }
+  };
+
+  // Draw pixel art result onto main & actual-size canvases
+  useEffect(() => {
+    if (!result) return;
+    syncCanvasesWithImageData(result.imageData);
   }, [result, viewMode, showRealSize]);
 
   // Draw cropped source image onto comparison source canvas
@@ -225,7 +287,6 @@ export function CanvasViewport({
     const sw = Math.max(1, config.crop.w * sourceImage.naturalWidth);
     const sh = Math.max(1, config.crop.h * sourceImage.naturalHeight);
 
-    // Keep source canvas crisp up to 1024px
     const maxEdge = 1024;
     const ratio = sw / sh;
     let cw = Math.min(maxEdge, Math.round(sw));
@@ -265,13 +326,12 @@ export function CanvasViewport({
     };
   }, [isDraggingSplit]);
 
-  // Crop box pointer drag (maintains exact targetW : targetH aspect ratio)
+  // Crop box pointer drag
   useEffect(() => {
     if (!cropDrag || !sourceImage) return;
 
     const srcRatio = sourceImage.naturalWidth / sourceImage.naturalHeight;
     const targetRatio = config.targetW / config.targetH;
-    // Normalized crop height = normalized crop width * (srcRatio / targetRatio)
     const normFactor = srcRatio / targetRatio;
 
     const handleMove = (e: PointerEvent) => {
@@ -382,7 +442,137 @@ export function CanvasViewport({
     });
   };
 
-  // Compute crisp display dimensions so side-by-side / split / pixel canvases fit comfortably
+  // --- Pixel Editor Pointer Interaction Helpers ---
+  const getPixelCoordsFromEvent = (e: React.PointerEvent<HTMLDivElement>): { x: number; y: number } | null => {
+    if (!result) return null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - rect.left) / rect.width) * result.width);
+    const y = Math.floor(((e.clientY - rect.top) / rect.height) * result.height);
+    if (x < 0 || x >= result.width || y < 0 || y >= result.height) return null;
+    return { x, y };
+  };
+
+  const updateHoverInfo = (coords: { x: number; y: number } | null) => {
+    if (!coords || !result) {
+      setHoverPixel(null);
+      return;
+    }
+    const img = strokeActiveRef.current.active && workingImgRef.current ? workingImgRef.current : result.imageData;
+    const px = getPixelAt(img, coords.x, coords.y);
+    if (!px || px.a === 0) {
+      setHoverPixel({ x: coords.x, y: coords.y, hex: null, isTransparent: true });
+    } else {
+      setHoverPixel({
+        x: coords.x,
+        y: coords.y,
+        hex: rgbToHex(px.r, px.g, px.b),
+        isTransparent: false,
+      });
+    }
+  };
+
+  const handleEditPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!result) return;
+    if (e.button !== 0 && e.button !== 2) return;
+    e.preventDefault();
+
+    const coords = getPixelCoordsFromEvent(e);
+    if (!coords) return;
+
+    // Alt + Left-Click anywhere = instant Eyedropper
+    if (e.altKey || (e.button === 0 && editor.tool === 'eyedropper')) {
+      const picked = getPixelAt(result.imageData, coords.x, coords.y);
+      if (picked && picked.a > 0) {
+        onUpdateEditor({
+          colorHex: rgbToHex(picked.r, picked.g, picked.b),
+          tool: editor.tool === 'eyedropper' ? 'pencil' : editor.tool,
+        });
+      }
+      return;
+    }
+
+    // Right-Click = instant Manual Pixel Eraser (手動點格去背)
+    const effectiveTool = e.button === 2 ? 'eraser' : editor.tool;
+
+    if (effectiveTool === 'bucket') {
+      const next = cloneImageData(result.imageData);
+      const rgb = hexToRgb(editor.colorHex);
+      const changed = floodFillOrReplace(
+        next,
+        coords.x,
+        coords.y,
+        { r: rgb.r, g: rgb.g, b: rgb.b, a: 255 },
+        editor.tolerance,
+        editor.contiguous
+      );
+      if (changed > 0) onCommitImageData(next);
+      return;
+    }
+
+    if (effectiveTool === 'wand') {
+      const next = cloneImageData(result.imageData);
+      const changed = floodFillOrReplace(
+        next,
+        coords.x,
+        coords.y,
+        { r: 0, g: 0, b: 0, a: 0 },
+        editor.tolerance,
+        editor.contiguous
+      );
+      if (changed > 0) onCommitImageData(next);
+      return;
+    }
+
+    // Pencil or Eraser stroke
+    const rgb = hexToRgb(editor.colorHex);
+    const strokeColor: RGBA =
+      effectiveTool === 'eraser'
+        ? { r: 0, g: 0, b: 0, a: 0 }
+        : { r: rgb.r, g: rgb.g, b: rgb.b, a: 255 };
+
+    const working = cloneImageData(result.imageData);
+    drawBrushStroke(working, coords.x, coords.y, coords.x, coords.y, editor.brushSize, strokeColor);
+    workingImgRef.current = working;
+    strokeActiveRef.current = {
+      active: true,
+      lastX: coords.x,
+      lastY: coords.y,
+      color: strokeColor,
+      size: editor.brushSize,
+    };
+
+    syncCanvasesWithImageData(working);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateHoverInfo(coords);
+  };
+
+  const handleEditPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const coords = getPixelCoordsFromEvent(e);
+    if (strokeActiveRef.current.active && workingImgRef.current && coords) {
+      const st = strokeActiveRef.current;
+      if (coords.x !== st.lastX || coords.y !== st.lastY) {
+        drawBrushStroke(workingImgRef.current, st.lastX, st.lastY, coords.x, coords.y, st.size, st.color);
+        st.lastX = coords.x;
+        st.lastY = coords.y;
+        syncCanvasesWithImageData(workingImgRef.current);
+      }
+    }
+    updateHoverInfo(coords);
+  };
+
+  const finishEditStroke = (e?: React.PointerEvent<HTMLDivElement>) => {
+    if (!strokeActiveRef.current.active) return;
+    strokeActiveRef.current.active = false;
+    if (e && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (workingImgRef.current) {
+      onCommitImageData(cloneImageData(workingImgRef.current));
+      workingImgRef.current = null;
+    }
+  };
+
+  // Compute crisp display dimensions
   const targetRatio = config.targetW / config.targetH;
   const availW = Math.max(240, viewportSize.w - (viewMode === 'side-by-side' ? 96 : 64));
   const availH = Math.max(240, viewportSize.h - 96);
@@ -424,6 +614,28 @@ export function CanvasViewport({
     e.target.value = '';
   };
 
+  // Compute pixel cursor highlight rectangle in Edit Mode
+  const brushPreviewRect = (() => {
+    if (viewMode !== 'edit' || !hoverPixel || !result) return null;
+    const isSingleCellTool =
+      editor.tool === 'eyedropper' || editor.tool === 'bucket' || editor.tool === 'wand';
+    const sz = isSingleCellTool ? 1 : editor.brushSize;
+    const half = Math.floor((sz - 1) / 2);
+    const startX = Math.max(0, hoverPixel.x - half);
+    const startY = Math.max(0, hoverPixel.y - half);
+    const endX = Math.min(result.width, hoverPixel.x - half + sz);
+    const endY = Math.min(result.height, hoverPixel.y - half + sz);
+    const cellW = dispW / result.width;
+    const cellH = dispH / result.height;
+    return {
+      left: startX * cellW,
+      top: startY * cellH,
+      width: (endX - startX) * cellW,
+      height: (endY - startY) * cellH,
+      isErase: editor.tool === 'eraser' || editor.tool === 'wand',
+    };
+  })();
+
   return (
     <div
       className="flex-1 flex flex-col min-w-0 min-h-[420px] bg-[#0B0D11] relative select-none"
@@ -442,7 +654,7 @@ export function CanvasViewport({
         onChange={handleFileChange}
       />
 
-      {/* Contextual Workspace Toolbar (wraps cleanly so resolution & grid are always visible) */}
+      {/* Contextual Workspace Toolbar */}
       <div className="px-3.5 py-2 border-b border-[#222733] bg-[#0F1218] flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -456,7 +668,7 @@ export function CanvasViewport({
 
           <div className="h-4 w-px bg-[#262B38] mx-0.5" aria-hidden="true" />
 
-          {/* Quick Resolution Switcher right on the Canvas Toolbar */}
+          {/* Quick Resolution Switcher */}
           <div className="flex items-center bg-[#161A23] border border-[#262B38] rounded-md p-0.5">
             {QUICK_RES_BUTTONS.map(([w, h]) => {
               const active = config.targetW === w && config.targetH === h;
@@ -513,7 +725,6 @@ export function CanvasViewport({
 
           {viewMode !== 'crop' && (
             <>
-              {/* Pixel Grid Toggle — Prominent & Always Visible */}
               <button
                 type="button"
                 onClick={() => setShowGrid((g) => !g)}
@@ -528,7 +739,6 @@ export function CanvasViewport({
                 {showGrid ? '格線：開' : '格線：關'}
               </button>
 
-              {/* Backdrop Toggle */}
               <div className="flex items-center bg-[#161A23] border border-[#262B38] rounded-md p-0.5">
                 {(['checker', 'dark', 'light'] as BackdropMode[]).map((b) => (
                   <button
@@ -546,7 +756,6 @@ export function CanvasViewport({
                 ))}
               </div>
 
-              {/* Zoom Controls */}
               <div className="flex items-center gap-1 bg-[#161A23] border border-[#262B38] rounded-md px-1 py-0.5">
                 <button
                   type="button"
@@ -566,7 +775,7 @@ export function CanvasViewport({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+                  onClick={() => setZoom((z) => Math.min(6, +(z + 0.25).toFixed(2)))}
                   className="p-1 text-[#94A3B8] hover:text-[#F1F5F9] transition-colors cursor-pointer"
                   aria-label="放大"
                 >
@@ -577,6 +786,48 @@ export function CanvasViewport({
           )}
         </div>
       </div>
+
+      {/* Phase 2 Pixel Editor Bar (visible in Edit Mode) */}
+      {viewMode === 'edit' && sourceImage && result && (
+        <PixelEditorBar
+          editor={editor}
+          palette={result.palette}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          hasManualEdits={hasManualEdits}
+          editStepCount={editStepCount}
+          onUpdateEditor={onUpdateEditor}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          onAutoRemoveBg={onAutoRemoveBg}
+          onResetEdits={onResetEdits}
+        />
+      )}
+
+      {/* Pending Reconversion Protection Notice (prevents accidental loss of manual pixel edits) */}
+      {hasPendingReconvert && (
+        <div className="px-4 py-2 bg-amber-500/12 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-100 shrink-0">
+          <span>
+            右側轉換參數已變更，但目前正保留你的手動修圖結果（避免意外覆蓋）。
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onApplyPendingReconvert}
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-[#0B0D11] font-medium rounded transition-colors cursor-pointer"
+            >
+              套用新參數（覆蓋手修）
+            </button>
+            <button
+              type="button"
+              onClick={onDismissPendingReconvert}
+              className="px-2.5 py-1 bg-[#1A1F2B] hover:bg-[#252C3D] text-amber-100 border border-amber-500/30 rounded transition-colors cursor-pointer"
+            >
+              維持目前修圖
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Canvas Stage */}
       <div
@@ -599,7 +850,7 @@ export function CanvasViewport({
         ) : viewMode === 'crop' ? (
           /* Interactive Crop Editor */
           <div className="flex flex-col items-center gap-3">
-            <div className="flex items-center gap-3 text-xs text-[#94A3B8]">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[#94A3B8]">
               <span>
                 拖曳裁切框或四角控制點，系統會自動鎖定輸出比例{' '}
                 <strong className="font-mono text-sky-300">
@@ -649,7 +900,6 @@ export function CanvasViewport({
                 referrerPolicy="no-referrer"
               />
 
-              {/* Dimmed overlay masks outside the crop rect */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -665,7 +915,6 @@ export function CanvasViewport({
                 }}
               />
 
-              {/* Interactive Crop Frame */}
               <div
                 onPointerDown={(e) => startCropDrag('move', e)}
                 className="absolute border-2 border-sky-400 cursor-move"
@@ -676,7 +925,6 @@ export function CanvasViewport({
                   height: `${config.crop.h * 100}%`,
                 }}
               >
-                {/* Rule of thirds subtle guides */}
                 <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
                   <div className="border-r border-b border-white/20" />
                   <div className="border-r border-b border-white/20" />
@@ -689,7 +937,6 @@ export function CanvasViewport({
                   <div />
                 </div>
 
-                {/* Corner Resize Handles */}
                 {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
                   <div
                     key={corner}
@@ -708,6 +955,66 @@ export function CanvasViewport({
               </div>
             </div>
           </div>
+        ) : viewMode === 'edit' ? (
+          /* Phase 2 Interactive Pixel Touch-Up & Background Removal Canvas */
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-full flex items-center justify-between gap-4 text-xs text-[#94A3B8]">
+              <span className="text-[#F1F5F9] font-medium">
+                {editor.tool === 'pencil'
+                  ? '畫筆精修（左鍵點塗 · 右鍵快速點格去背）'
+                  : editor.tool === 'eraser'
+                    ? '橡皮擦手動去背（點擊或拖曳像素格變透明）'
+                    : editor.tool === 'eyedropper'
+                      ? '滴管吸色（點擊任意像素吸取顏色）'
+                      : editor.tool === 'bucket'
+                        ? '油漆桶填色（點擊區域填滿目前顏色）'
+                        : '魔術棒去背（點擊背景區域一次清除為透明）'}
+              </span>
+              <span className="font-mono tabular-nums text-sky-300 shrink-0">
+                {config.targetW}×{config.targetH}
+              </span>
+            </div>
+
+            <div
+              onPointerDown={handleEditPointerDown}
+              onPointerMove={handleEditPointerMove}
+              onPointerUp={finishEditStroke}
+              onPointerCancel={finishEditStroke}
+              onPointerLeave={() => {
+                if (!strokeActiveRef.current.active) setHoverPixel(null);
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              className={`border border-[#333C4F] overflow-hidden relative touch-none cursor-crosshair ${backdropClass}`}
+              style={{ width: dispW, height: dispH }}
+            >
+              <canvas ref={pixelCanvasRef} className="w-full h-full block pixelated" />
+              {showGrid && (
+                <PixelGridOverlay
+                  width={dispW}
+                  height={dispH}
+                  cols={config.targetW}
+                  rows={config.targetH}
+                />
+              )}
+
+              {/* Pixel-Perfect Brush / Cell Highlight Cursor */}
+              {brushPreviewRect && (
+                <div
+                  className={`absolute pointer-events-none box-border border-2 ${
+                    brushPreviewRect.isErase
+                      ? 'border-rose-400 bg-rose-400/20'
+                      : 'border-sky-300 bg-sky-400/15'
+                  }`}
+                  style={{
+                    left: brushPreviewRect.left,
+                    top: brushPreviewRect.top,
+                    width: Math.max(2, brushPreviewRect.width),
+                    height: Math.max(2, brushPreviewRect.height),
+                  }}
+                />
+              )}
+            </div>
+          </div>
         ) : viewMode === 'side-by-side' ? (
           /* Side-by-Side Synced Comparison */
           <div className="flex flex-col md:flex-row items-center justify-center gap-6">
@@ -723,16 +1030,15 @@ export function CanvasViewport({
                 className={`border border-[#262B38] overflow-hidden relative ${backdropClass}`}
                 style={{ width: dispW, height: dispH }}
               >
-                <canvas
-                  ref={sourceCropCanvasRef}
-                  className="w-full h-full block"
-                />
+                <canvas ref={sourceCropCanvasRef} className="w-full h-full block" />
               </div>
             </div>
 
             <div className="flex flex-col items-center gap-2">
               <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
-                <span className="text-[#F1F5F9] font-medium">像素轉換結果</span>
+                <span className="text-[#F1F5F9] font-medium">
+                  像素轉換結果{hasManualEdits ? '（已手動精修）' : ''}
+                </span>
                 <span className="font-mono tabular-nums text-sky-300">
                   {config.targetW}×{config.targetH}
                 </span>
@@ -741,10 +1047,7 @@ export function CanvasViewport({
                 className={`border border-[#262B38] overflow-hidden relative ${backdropClass}`}
                 style={{ width: dispW, height: dispH }}
               >
-                <canvas
-                  ref={pixelCanvasRef}
-                  className="w-full h-full block pixelated"
-                />
+                <canvas ref={pixelCanvasRef} className="w-full h-full block pixelated" />
                 {showGrid && (
                   <PixelGridOverlay
                     width={dispW}
@@ -762,17 +1065,17 @@ export function CanvasViewport({
             <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
               <span>左側：高解析原圖</span>
               <span>拖曳中線檢視線條與五官保留度</span>
-              <span className="text-sky-300">右側：像素結果 ({config.targetW}×{config.targetH})</span>
+              <span className="text-sky-300">
+                右側：像素結果 ({config.targetW}×{config.targetH})
+              </span>
             </div>
             <div
               id="split-compare-frame"
               className={`border border-[#262B38] overflow-hidden relative ${backdropClass}`}
               style={{ width: dispW, height: dispH }}
             >
-              {/* Source underneath */}
               <canvas ref={sourceCropCanvasRef} className="w-full h-full block" />
 
-              {/* Pixel result clipped on the right of splitPos */}
               <div
                 className="absolute inset-0 overflow-hidden"
                 style={{ clipPath: `inset(0 0 0 ${splitPos}%)` }}
@@ -788,7 +1091,6 @@ export function CanvasViewport({
                 )}
               </div>
 
-              {/* Draggable Divider */}
               <div
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -807,7 +1109,9 @@ export function CanvasViewport({
           /* Pixel Art Only Focus Mode */
           <div className="flex flex-col items-center gap-2">
             <div className="w-full flex items-center justify-between text-xs text-[#94A3B8]">
-              <span className="text-[#F1F5F9] font-medium">像素預覽</span>
+              <span className="text-[#F1F5F9] font-medium">
+                像素預覽{hasManualEdits ? '（已手動精修）' : ''}
+              </span>
               <span className="font-mono tabular-nums text-sky-300">
                 {config.targetW}×{config.targetH}
               </span>
@@ -889,10 +1193,45 @@ export function CanvasViewport({
         </div>
       )}
 
-      {/* Keyboard shortcut hint (subtle single line, non-telemetry) */}
-      <div className="h-8 px-4 border-t border-[#1D212C] bg-[#0D1016] flex items-center justify-between text-[11px] text-[#64748B] shrink-0">
-        <span>提示：可直接拖曳本機圖片到畫布，或按 Ctrl+V 貼上剪貼簿圖片</span>
-        <span className="hidden sm:inline">所有影像運算皆於瀏覽器本地執行</span>
+      {/* Contextual Bottom Hint & Live Pixel Coordinate Bar */}
+      <div className="h-8 px-4 border-t border-[#1D212C] bg-[#0D1016] flex items-center justify-between gap-4 text-[11px] text-[#7A879C] shrink-0">
+        {viewMode === 'edit' ? (
+          <>
+            <div className="flex items-center gap-3 font-mono tabular-nums">
+              {hoverPixel ? (
+                <>
+                  <span className="text-[#CBD5E1]">
+                    X:{hoverPixel.x} Y:{hoverPixel.y}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  {hoverPixel.isTransparent ? (
+                    <span className="text-[#94A3B8]">透明像素</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[#CBD5E1]">
+                      <span
+                        className="w-2.5 h-2.5 rounded-[1px] border border-white/25 inline-block"
+                        style={{ backgroundColor: hoverPixel.hex || '#000' }}
+                      />
+                      {hoverPixel.hex}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="font-sans">
+                  快捷鍵：B 畫筆 · E 橡皮擦去背 · I 滴管 · G 油漆桶 · W 魔術棒 · Ctrl+Z 復原
+                </span>
+              )}
+            </div>
+            <span className="hidden sm:inline whitespace-nowrap">
+              右鍵可直接點格去背 · Alt+點擊吸色
+            </span>
+          </>
+        ) : (
+          <>
+            <span>提示：可拖曳圖片或按 Ctrl+V 貼上，點上方「像素精修」即可逐格修圖與去背</span>
+            <span className="hidden sm:inline whitespace-nowrap">所有影像運算皆於瀏覽器本地執行</span>
+          </>
+        )}
       </div>
     </div>
   );

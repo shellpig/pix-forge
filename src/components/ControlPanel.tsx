@@ -30,6 +30,7 @@ interface ControlPanelProps {
   onSelectDimensions: (w: number, h: number) => void;
   onResetConfig: () => void;
   onOpenCropMode: () => void;
+  onPickColor: (hex: string) => void;
   onDownloadPng: () => void;
   onCopyPng: () => Promise<void>;
 }
@@ -87,6 +88,7 @@ export function ControlPanel({
   onSelectDimensions,
   onResetConfig,
   onOpenCropMode,
+  onPickColor,
   onDownloadPng,
   onCopyPng,
 }: ControlPanelProps) {
@@ -121,6 +123,7 @@ export function ControlPanel({
 
   const handleCopyHex = (hex: string) => {
     navigator.clipboard?.writeText(hex).catch(() => {});
+    onPickColor(hex);
     setCopiedHex(hex);
     window.setTimeout(() => setCopiedHex((curr) => (curr === hex ? null : curr)), 1200);
   };
@@ -508,7 +511,7 @@ export function ControlPanel({
                   輸出色盤（共 <span className="font-mono text-[#CBD5E1]">{result.uniqueColorCount}</span> 色）
                 </span>
                 <span className="font-mono text-sky-300">
-                  {copiedHex ? `已複製 ${copiedHex}` : '點擊色塊複製 HEX'}
+                  {copiedHex ? `已選取 ${copiedHex}` : '點擊取色／複製'}
                 </span>
               </div>
               <div className="grid grid-cols-12 gap-1">
