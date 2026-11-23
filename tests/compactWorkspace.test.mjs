@@ -47,3 +47,12 @@ test('fixed shortcut footer becomes accessible help and live coordinate overlay'
   assert.match(viewport, /viewMode === 'edit' && hoverPixel/);
   assert.match(viewport, /X:\{hoverPixel\.x\} Y:\{hoverPixel\.y\}/);
 });
+
+test('removes duplicate top-right download button and enables wheel zoom overflow in edit mode', () => {
+  const headerMatch = app.match(/<header[\s\S]*?<\/header>/);
+  assert.ok(headerMatch);
+  assert.doesNotMatch(headerMatch[0], /下載 PNG/);
+  assert.doesNotMatch(headerMatch[0], /handleDownloadPng/);
+  assert.match(viewport, /addEventListener\('wheel', handleWheel, \{ passive: false \}\)/);
+  assert.match(viewport, /className="m-auto shrink-0"/);
+});

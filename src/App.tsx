@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { PixelEditorState } from './components/PixelEditorBar';
@@ -822,19 +821,17 @@ export default function App() {
     }
   }, [collectAllExportFrames, exportScale, config.targetW, config.targetH]);
 
-  const isMultiFrame = frames.length > 1;
-
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
-      {/* Strict 3-Zone Top Bar Contract */}
-      <header className="h-13 px-5 border-b border-[#222733] bg-[#0F1218] flex items-center justify-between gap-8 shrink-0">
+      {/* Top Navigation Bar */}
+      <header className="h-13 px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[1fr_auto_1fr] items-center gap-6 shrink-0">
         {/* Zone 1: Single-line Brand Wordmark */}
-        <span className="text-base font-bold tracking-tight text-[#F8FAFC] whitespace-nowrap shrink-0">
+        <span className="text-base font-bold tracking-tight text-[#F8FAFC] whitespace-nowrap shrink-0 justify-self-start">
           PixForge
         </span>
 
         {/* Zone 2: Concise Single-Line Mode Links */}
-        <nav className="flex items-center gap-6 h-full overflow-x-auto">
+        <nav className="flex items-center gap-6 h-full overflow-x-auto justify-self-center">
           {VIEW_TABS.map((tab) => {
             const active = viewMode === tab.id;
             return (
@@ -853,18 +850,7 @@ export default function App() {
           })}
         </nav>
 
-        {/* Zone 3: Single Primary Action */}
-        <div className="shrink-0">
-          <button
-            type="button"
-            disabled={!activeResult || isExporting}
-            onClick={isMultiFrame && viewMode === 'animate' ? handleDownloadSpriteSheet : handleDownloadPng}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#081018] bg-sky-400 hover:bg-sky-300 disabled:opacity-40 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            {isMultiFrame && viewMode === 'animate' ? '匯出 Sprite Sheet' : '下載 PNG'}
-          </button>
-        </div>
+        <div aria-hidden="true" />
       </header>
 
       {/* Error banner if needed */}

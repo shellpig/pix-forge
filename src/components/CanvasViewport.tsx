@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Grid3X3,
   ImagePlus,
@@ -87,6 +87,8 @@ interface CanvasViewportProps {
 }
 
 const FPS_PRESETS = [6, 8, 12, 15, 24];
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 8;
 
 function PixelGridOverlay({
   width,
@@ -216,11 +218,25 @@ export function CanvasViewport({
   onChangeViewMode,
 }: CanvasViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const editCanvasBoxRef = useRef<HTMLDivElement | null>(null);
   const pixelCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sourceCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual1xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual2xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingWheelAnchorRef = useRef<{
+    clientX: number;
+    clientY: number;
+    ratioX: number;
+    ratioY: number;
+  } | null>(null);
+  const panDragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startScrollLeft: number;
+    startScrollTop: number;
+  }>({ active: false, startX: 0, startY: 0, startScrollLeft: 0, startScrollTop: 0 });
 
   const [zoom, setZoom] = useState<number>(1);
   const [showGrid, setShowGrid] = useState<boolean>(false);
@@ -281,6 +297,93 @@ export function CanvasViewport({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Mouse wheel zoom in Pixel Edit mode (anchored to pointer position, allowing overflow beyond stage)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || viewMode !== 'edit' || !sourceImage) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+
+      const canvasBox = editCanvasBoxRef.current;
+      if (canvasBox) {
+        const boxRect = canvasBox.getBoundingClientRect();
+        if (boxRect.width > 0 && boxRect.height > 0) {
+          const ratioX = Math.max(0, Math.min(1, (e.clientX - boxRect.left) / boxRect.width));
+          const ratioY = Math.max(0, Math.min(1, (e.clientY - boxRect.top) / boxRect.height));
+          pendingWheelAnchorRef.current = {
+            clientX: e.clientX,
+            clientY: e.clientY,
+            ratioX,
+            ratioY,
+          };
+        }
+      }
+
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setZoom((prev) => {
+        const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, +(prev * factor).toFixed(2)));
+        if (next === prev) {
+          pendingWheelAnchorRef.current = null;
+        }
+        return next;
+      });
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [viewMode, sourceImage]);
+
+  useLayoutEffect(() => {
+    const anchor = pendingWheelAnchorRef.current;
+    if (!anchor) return;
+    pendingWheelAnchorRef.current = null;
+
+    const container = containerRef.current;
+    const canvasBox = editCanvasBoxRef.current;
+    if (!container || !canvasBox) return;
+
+    const nextRect = canvasBox.getBoundingClientRect();
+    const targetScreenX = nextRect.left + anchor.ratioX * nextRect.width;
+    const targetScreenY = nextRect.top + anchor.ratioY * nextRect.height;
+
+    container.scrollLeft += targetScreenX - anchor.clientX;
+    container.scrollTop += targetScreenY - anchor.clientY;
+  }, [zoom]);
+
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (viewMode !== 'edit' || e.button !== 1) return;
+    const el = containerRef.current;
+    if (!el) return;
+    e.preventDefault();
+    panDragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScrollLeft: el.scrollLeft,
+      startScrollTop: el.scrollTop,
+    };
+    el.setPointerCapture(e.pointerId);
+  };
+
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!panDragRef.current.active) return;
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollLeft = panDragRef.current.startScrollLeft - (e.clientX - panDragRef.current.startX);
+    el.scrollTop = panDragRef.current.startScrollTop - (e.clientY - panDragRef.current.startY);
+  };
+
+  const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!panDragRef.current.active) return;
+    panDragRef.current.active = false;
+    const el = containerRef.current;
+    if (el && el.hasPointerCapture(e.pointerId)) {
+      el.releasePointerCapture(e.pointerId);
+    }
+  };
 
   const syncCanvasesWithImageData = (imgData: ImageData) => {
     const canvases = [pixelCanvasRef.current, actual1xCanvasRef.current, actual2xCanvasRef.current];
@@ -827,7 +930,7 @@ export function CanvasViewport({
               <div className="flex shrink-0 items-center gap-1 px-1 py-0.5 border border-[#262B38] bg-[#161A23] rounded">
                 <button
                   type="button"
-                  onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                  onClick={() => setZoom((z) => Math.max(MIN_ZOOM, +(z - 0.25).toFixed(2)))}
                   title="縮小"
                   aria-label="縮小"
                   className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
@@ -844,7 +947,7 @@ export function CanvasViewport({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setZoom((z) => Math.min(6, +(z + 0.25).toFixed(2)))}
+                  onClick={() => setZoom((z) => Math.min(MAX_ZOOM, +(z + 0.25).toFixed(2)))}
                   title="放大"
                   aria-label="放大"
                   className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
@@ -910,10 +1013,16 @@ export function CanvasViewport({
       )}
 
       {/* Main Canvas Stage */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 overflow-auto studio-scroll flex items-center justify-center p-3 sm:p-4 relative"
-      >
+      <div className="flex-1 min-h-0 relative flex flex-col">
+        <div
+          ref={containerRef}
+          onPointerDown={handleStagePointerDown}
+          onPointerMove={handleStagePointerMove}
+          onPointerUp={handleStagePointerUp}
+          onPointerCancel={handleStagePointerUp}
+          className="flex-1 min-h-0 overflow-auto studio-scroll flex p-3 sm:p-4"
+        >
+          <div className="m-auto shrink-0">
         {!sourceImage ? (
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -1062,6 +1171,7 @@ export function CanvasViewport({
             </div>
 
             <div
+              ref={editCanvasBoxRef}
               onPointerDown={handleEditPointerDown}
               onPointerMove={handleEditPointerMove}
               onPointerUp={finishEditStroke}
@@ -1243,6 +1353,8 @@ export function CanvasViewport({
             </div>
           </div>
         )}
+          </div>
+        </div>
 
         {/* Compact coordinate readout replaces the fixed 32px bottom bar. */}
         {viewMode === 'edit' && hoverPixel && (
@@ -1280,7 +1392,7 @@ export function CanvasViewport({
               <p className="mt-1.5 leading-relaxed">Space：播放／暫停；←／→：切換影格；雙擊縮圖：精修影格。</p>
             )}
             {viewMode === 'edit' && (
-              <p className="mt-1.5 leading-relaxed">B：畫筆；E：橡皮擦；I：滴管；G：油漆桶；W：魔術棒；Ctrl+Z：復原；Ctrl+Y：重做；右鍵：去背；Alt+點擊：吸色。</p>
+              <p className="mt-1.5 leading-relaxed">B：畫筆；E：橡皮擦；I：滴管；G：油漆桶；W：魔術棒；滾輪：縮放畫布；中鍵拖曳：移動視角；Ctrl+Z：復原；Ctrl+Y：重做；右鍵：去背；Alt+點擊：吸色。</p>
             )}
           </div>
         )}
