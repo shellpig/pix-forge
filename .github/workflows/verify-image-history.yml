@@ -1,0 +1,36 @@
+name: Temporary image upload and undo regression checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-image-history.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Clean install from lockfile
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript validation
+        run: npm run lint
+      - name: Undo baseline regression tests
+        run: node --import tsx --test tests/frameHistory.test.mjs
+      - name: Verify upload object URL cleanup for success and failure
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const app = readFileSync('src/App.tsx','utf8');
+          assert.match(app, /const url = URL\.createObjectURL\(file\);[\s\S]*?try \{[\s\S]*?await loadHtmlImageFromUrl\(url\);[\s\S]*?\} finally \{[\s\S]*?URL\.revokeObjectURL\(url\);/, 'Upload URL must revoke in finally');
+          console.log('Object URL cleanup condition passed');
+          NODE
+      - name: Production bundle
+        run: npm run build
