@@ -91,7 +91,9 @@ export function FrameTimelineBar({
           </span>
           <span aria-hidden="true" className="hidden sm:inline">·</span>
           <span className="hidden sm:inline text-[11px] text-[#7A879C]">
-            拖曳縮圖調整順序 · 點選單格切換檢視或點筆刷進入精修
+            {frames.length <= 1
+              ? '加入更多影格即可播放動畫'
+              : '拖曳縮圖調整順序 · 點選單格切換檢視或雙擊進入精修'}
           </span>
         </div>
 

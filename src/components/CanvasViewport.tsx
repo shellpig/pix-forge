@@ -15,7 +15,6 @@ import {
   SkipBack,
   SkipForward,
   Pencil,
-  Film,
 } from 'lucide-react';
 import { hexToRgb, rgbToHex } from '../lib/palettes';
 import {
@@ -929,23 +928,6 @@ export function CanvasViewport({
               維持目前修圖
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Single-Frame Hint inside Animate Mode */}
-      {viewMode === 'animate' && timelineFrames.length <= 1 && (
-        <div className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/25 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
-          <span className="inline-flex items-center gap-1.5">
-            <Film className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            目前僅有 1 張影格。請一次多選多張連續圖（例如 8 張動作序列），或點下方「追加影格」即可開始動畫播放。
-          </span>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="px-2.5 py-1 bg-sky-400 hover:bg-sky-300 text-[#081018] font-medium rounded transition-colors whitespace-nowrap cursor-pointer"
-          >
-            一次選取多張連續圖
-          </button>
         </div>
       )}
 
