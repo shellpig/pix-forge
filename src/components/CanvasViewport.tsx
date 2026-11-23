@@ -1150,21 +1150,35 @@ export function CanvasViewport({
         ) : viewMode === 'edit' ? (
           /* Interactive Pixel Touch-Up & Background Removal Canvas */
           <div className="flex flex-col items-center gap-2">
-            <div className="w-full flex items-center justify-between gap-4 text-xs text-[#94A3B8]">
-              <span className="text-[#F1F5F9] font-medium">
-                {timelineFrames.length > 1
-                  ? `第 ${activeFrameIdx + 1} 格精修 · `
-                  : ''}
-                {editor.tool === 'pencil'
-                  ? '畫筆精修（左鍵點塗 · 右鍵快速點格去背）'
-                  : editor.tool === 'eraser'
-                    ? '橡皮擦手動去背（點擊或拖曳像素格變透明）'
-                    : editor.tool === 'eyedropper'
-                      ? '滴管吸色（點擊任意像素吸取顏色）'
-                      : editor.tool === 'bucket'
-                        ? '油漆桶填色（點擊區域填滿目前顏色）'
-                        : '魔術棒去背（點擊背景區域一次清除為透明）'}
-              </span>
+            <div className="w-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[#94A3B8]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-[#F1F5F9] font-medium whitespace-nowrap">
+                  {timelineFrames.length > 1
+                    ? `第 ${activeFrameIdx + 1} 格 · `
+                    : ''}
+                  {editor.tool === 'pencil'
+                    ? '畫筆精修'
+                    : editor.tool === 'eraser'
+                      ? '橡皮擦去背'
+                      : editor.tool === 'eyedropper'
+                        ? '滴管吸色'
+                        : editor.tool === 'bucket'
+                          ? '油漆桶填色'
+                          : '魔術棒去背'}
+                </span>
+                <span className="text-[11px] text-[#8B95A8]">
+                  {editor.tool === 'pencil'
+                    ? '左鍵點塗 · 右鍵點格去背'
+                    : editor.tool === 'eraser'
+                      ? '左鍵點拖變透明'
+                      : editor.tool === 'eyedropper'
+                        ? '點擊像素吸色'
+                        : editor.tool === 'bucket'
+                          ? '點擊區域填色'
+                          : '點擊清除背景'}
+                  {' · 滾輪放大縮小 · 中鍵移動'}
+                </span>
+              </div>
               <span className="font-mono tabular-nums text-sky-300 shrink-0">
                 {config.targetW}×{config.targetH}
               </span>
