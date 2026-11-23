@@ -25,6 +25,12 @@ import {
   exportSpriteSheetPngBlob,
 } from './lib/animationExport';
 import { getSpriteSheetLayout } from './lib/spriteSheetLayout';
+import {
+  deserializeManualEdit,
+  loadPersistedWorkspace,
+  savePersistedWorkspace,
+  serializeManualEdit,
+} from './lib/workspacePersistence';
 
 type BatchWorkerReply =
   | { type: 'success'; results: PixelEngineResult[] }
@@ -34,6 +40,8 @@ interface AnimationFrameItem {
   id: string;
   name: string;
   sourceImage: HTMLImageElement;
+  sourceBlob?: Blob;
+  sampleSrc?: string;
   convertedResult: PixelEngineResult | null;
   editHistory: ImageData[];
   historyIndex: number;
@@ -127,6 +135,7 @@ export default function App() {
   const sourceKey = useMemo(() => frames.map((f) => f.id).sort().join('|'), [frames]);
   const framesRef = useRef<AnimationFrameItem[]>(frames);
   framesRef.current = frames;
+  const isHydratedRef = useRef<boolean>(false);
   const undoStackRef = useRef<UndoActionEntry[]>([]);
   const redoStackRef = useRef<UndoActionEntry[]>([]);
 
@@ -373,6 +382,7 @@ export default function App() {
             id,
             name: `${sample.label.replace('範例：', '')}.jpg`,
             sourceImage: img,
+            sampleSrc: sample.src,
             convertedResult: null,
             editHistory: [],
             historyIndex: -1,
@@ -395,10 +405,128 @@ export default function App() {
     [clearUndoStacks]
   );
 
-  // Initial load
+  // Initial load: restore previous workspace from IndexedDB, or fall back to built-in sample
   useEffect(() => {
-    loadSample(BUILTIN_SAMPLES[0]);
-  }, [loadSample]);
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const saved = await loadPersistedWorkspace();
+        if (cancelled) return;
+
+        if (saved && saved.frames.length > 0) {
+          const decoded = await Promise.all(
+            saved.frames.map(async (pf): Promise<AnimationFrameItem | null> => {
+              try {
+                let img: HTMLImageElement;
+                if (pf.sourceBlob) {
+                  const url = URL.createObjectURL(pf.sourceBlob);
+                  try {
+                    img = await loadHtmlImageFromUrl(url);
+                  } finally {
+                    URL.revokeObjectURL(url);
+                  }
+                } else if (pf.sampleSrc) {
+                  img = await loadHtmlImageFromUrl(pf.sampleSrc);
+                } else {
+                  return null;
+                }
+
+                const manualImg = deserializeManualEdit(pf.manualEdit);
+                return {
+                  id: pf.id,
+                  name: pf.name,
+                  sourceImage: img,
+                  sourceBlob: pf.sourceBlob,
+                  sampleSrc: pf.sampleSrc,
+                  convertedResult: null,
+                  editHistory: manualImg ? [cloneImageData(manualImg), manualImg] : [],
+                  historyIndex: manualImg ? 1 : -1,
+                };
+              } catch {
+                return null;
+              }
+            })
+          );
+
+          if (cancelled) return;
+          const restoredFrames = decoded.filter((f): f is AnimationFrameItem => f !== null);
+          if (restoredFrames.length > 0) {
+            clearUndoStacks();
+            setErrorMsg(null);
+            setActiveSampleId(saved.activeSampleId);
+            setIsPlaying(false);
+            setHasPendingReconvert(false);
+            setConfig(saved.config);
+            setViewMode(saved.viewMode);
+            setFps(saved.fps);
+            setExportScale(saved.exportScale);
+            setSpriteSheetCols(saved.spriteSheetCols);
+            setFrames(restoredFrames);
+            const nextActiveId =
+              saved.activeFrameId && restoredFrames.some((f) => f.id === saved.activeFrameId)
+                ? saved.activeFrameId
+                : restoredFrames[0].id;
+            setActiveFrameId(nextActiveId);
+            isHydratedRef.current = true;
+            return;
+          }
+        }
+      } catch {
+        // Fall through to default sample
+      }
+
+      if (!cancelled) {
+        await loadSample(BUILTIN_SAMPLES[0]);
+        if (!cancelled) isHydratedRef.current = true;
+      }
+    };
+
+    hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSample, clearUndoStacks]);
+
+  // Auto-save current workspace (images, manual edits, settings) to IndexedDB
+  useEffect(() => {
+    if (!isHydratedRef.current || frames.length === 0) return;
+
+    const timerId = window.setTimeout(() => {
+      const persistedFrames = frames
+        .filter((f) => Boolean(f.sourceBlob || f.sampleSrc))
+        .map((f) => {
+          const manualImg =
+            f.historyIndex > 0 && f.historyIndex < f.editHistory.length
+              ? f.editHistory[f.historyIndex]
+              : null;
+          return {
+            id: f.id,
+            name: f.name,
+            sourceBlob: f.sourceBlob,
+            sampleSrc: f.sampleSrc,
+            manualEdit: serializeManualEdit(manualImg),
+          };
+        });
+
+      if (persistedFrames.length === 0) return;
+
+      void savePersistedWorkspace({
+        version: 1,
+        savedAt: Date.now(),
+        activeSampleId,
+        activeFrameId,
+        viewMode,
+        config,
+        fps,
+        exportScale,
+        spriteSheetCols,
+        frames: persistedFrames,
+      });
+    }, 450);
+
+    return () => window.clearTimeout(timerId);
+  }, [frames, activeFrameId, activeSampleId, viewMode, config, fps, exportScale, spriteSheetCols]);
 
   // Multi-file or single-file upload handler (with natural numeric filename sorting!)
   const handleUploadFiles = useCallback(async (rawFiles: File[], mode: 'replace' | 'append') => {
@@ -424,6 +552,7 @@ export default function App() {
             id: makeFrameId(),
             name: file.name || '剪貼簿圖片.png',
             sourceImage: img,
+            sourceBlob: file,
             convertedResult: null,
             editHistory: [] as ImageData[],
             historyIndex: -1,
