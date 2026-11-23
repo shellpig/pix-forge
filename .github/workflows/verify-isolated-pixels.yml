@@ -1,0 +1,52 @@
+name: Temporary isolated-pixel cleanup regression verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-isolated-pixels.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: All regression tests including 11 isolated-pixel cases
+        run: npm test
+      - name: TypeScript check
+        run: npm run lint
+      - name: Production Vite build and browser Web Worker
+        run: npm run build
+      - name: Verify static assets and Worker output
+        run: |
+          test -f dist/index.html
+          test -f dist/src/assets/images/sample_rpg_knight_1795397004570.jpg
+          test -f dist/src/assets/images/sample_fantasy_tavern_1795397003478.jpg
+          find dist -type f | grep -E 'pixelConversion.worker|worker-'
+      - name: Validate Cloudflare Workers static deploy config
+        run: npx --no-install wrangler deploy --dry-run
+      - name: Check defaults, disabled state and documentation
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const engine=fs.readFileSync('src/lib/pixelEngine.ts','utf8');
+          const panel=fs.readFileSync('src/components/ControlPanel.tsx','utf8');
+          const worker=fs.readFileSync('src/workers/pixelConversion.worker.ts','utf8');
+          assert.match(engine, /isolatedPixelMode: 'light'/);
+          assert.match(engine, /const cleanupMode = getEffectiveIsolatedPixelMode\(config\)/);
+          assert.match(panel, /disabled=\{cleanupDisabledByDither\}/);
+          assert.match(worker, /runBatchPixelConversion\(images, config\)/);
+          for(const path of ['README.md','README.en.md']){
+            const doc=fs.readFileSync(path,'utf8');
+            assert.ok(doc.includes('Oklab') || doc.includes('Oklab'));
+          }
+          NODE
