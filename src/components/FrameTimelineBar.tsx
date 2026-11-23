@@ -57,8 +57,43 @@ export function FrameTimelineBar({
   onAppendFiles,
 }: FrameTimelineBarProps) {
   const appendInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmPopoverRef = useRef<HTMLDivElement | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState<boolean>(false);
+  const [dontAskChecked, setDontAskChecked] = useState<boolean>(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    frameId: string;
+    frameNumber: number;
+    anchorX: number;
+    anchorY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (confirmPopoverRef.current && !confirmPopoverRef.current.contains(e.target as Node)) {
+        setPendingDelete(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPendingDelete(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [pendingDelete]);
+
+  useEffect(() => {
+    if (pendingDelete && !frames.some((f) => f.id === pendingDelete.frameId)) {
+      setPendingDelete(null);
+    }
+  }, [frames, pendingDelete]);
 
   const activeIdx = frames.findIndex((f) => f.id === activeFrameId);
   const isSingleFrame = frames.length <= 1;
@@ -178,7 +213,23 @@ export function FrameTimelineBar({
                       title="刪除此影格"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteFrame(frame.id);
+                        if (skipDeleteConfirm) {
+                          onDeleteFrame(frame.id);
+                          return;
+                        }
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const anchorX = Math.max(
+                          116,
+                          Math.min(window.innerWidth - 116, rect.left + rect.width / 2)
+                        );
+                        const anchorY = Math.max(96, rect.top - 8);
+                        setDontAskChecked(false);
+                        setPendingDelete({
+                          frameId: frame.id,
+                          frameNumber: index + 1,
+                          anchorX,
+                          anchorY,
+                        });
                       }}
                       className="p-0.5 bg-[#0B0D11]/85 hover:bg-rose-500 text-[#E2E8F0] hover:text-white rounded-[2px] cursor-pointer"
                     >
@@ -216,6 +267,57 @@ export function FrameTimelineBar({
           <Plus className="w-4 h-4" />
           <span className="text-[10px]">加影格</span>
         </button>
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div
+          ref={confirmPopoverRef}
+          role="dialog"
+          aria-label="確認刪除影格"
+          style={{
+            left: pendingDelete.anchorX,
+            top: pendingDelete.anchorY,
+            transform: 'translate(-50%, -100%)',
+          }}
+          className="fixed z-50 w-[216px] p-2.5 bg-[#151B26] border border-[#364056] rounded-md shadow-2xl text-xs text-[#E2E8F0]"
+        >
+          <p className="font-medium text-[#F8FAFC]">
+            確定刪除第 #{String(pendingDelete.frameNumber).padStart(2, '0')} 格？
+          </p>
+          <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+            刪除後可按 Ctrl+Z 復原
+          </p>
+          <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-[#CBD5E1] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={dontAskChecked}
+              onChange={(e) => setDontAskChecked(e.target.checked)}
+              className="accent-sky-400 cursor-pointer"
+            />
+            本次不再詢問
+          </label>
+          <div className="mt-2.5 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPendingDelete(null)}
+              className="px-2 py-1 text-[11px] text-[#CBD5E1] bg-[#1D2433] hover:bg-[#263044] border border-[#2D3546] rounded cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (dontAskChecked) setSkipDeleteConfirm(true);
+                const targetId = pendingDelete.frameId;
+                setPendingDelete(null);
+                onDeleteFrame(targetId);
+              }}
+              className="px-2.5 py-1 text-[11px] font-medium text-white bg-rose-500 hover:bg-rose-400 rounded cursor-pointer"
+            >
+              刪除
+            </button>
+          </div>
         </div>
       )}
     </div>

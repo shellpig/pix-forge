@@ -61,3 +61,10 @@ test('crop preview draws decoded sourceImage onto canvas instead of reusing revo
   assert.doesNotMatch(viewport, /src=\{sourceImage\.src\}/);
   assert.match(viewport, /ref=\{cropPreviewCanvasRef\}/);
 });
+
+test('frame deletion shows nearby confirmation popover with skip option and supports Ctrl+Z restore', () => {
+  assert.match(timeline, /aria-label="確認刪除影格"/);
+  assert.match(timeline, /本次不再詢問/);
+  assert.match(app, /type: 'delete-frame'/);
+  assert.match(app, /handleGlobalUndo/);
+});

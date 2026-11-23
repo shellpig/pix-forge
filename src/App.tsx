@@ -39,6 +39,10 @@ interface AnimationFrameItem {
   historyIndex: number;
 }
 
+type UndoActionEntry =
+  | { type: 'pixel-edit'; frameId: string }
+  | { type: 'delete-frame'; frame: AnimationFrameItem; index: number };
+
 const BUILTIN_SAMPLES = [
   {
     id: 'rpg-knight',
@@ -123,6 +127,18 @@ export default function App() {
   const sourceKey = useMemo(() => frames.map((f) => f.id).sort().join('|'), [frames]);
   const framesRef = useRef<AnimationFrameItem[]>(frames);
   framesRef.current = frames;
+  const undoStackRef = useRef<UndoActionEntry[]>([]);
+  const redoStackRef = useRef<UndoActionEntry[]>([]);
+
+  const pushUndoAction = useCallback((entry: UndoActionEntry) => {
+    undoStackRef.current = [...undoStackRef.current.slice(-(MAX_HISTORY - 1)), entry];
+    redoStackRef.current = [];
+  }, []);
+
+  const clearUndoStacks = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, []);
 
   const activeFrame = useMemo(() => {
     if (frames.length === 0) return null;
@@ -320,13 +336,22 @@ export default function App() {
 
   const clearAllManualEdits = useCallback(() => {
     setFrames((prev) => prev.map((f) => ({ ...f, editHistory: [], historyIndex: -1 })));
+    undoStackRef.current = undoStackRef.current.filter((e) => e.type !== 'pixel-edit');
+    redoStackRef.current = redoStackRef.current.filter((e) => e.type !== 'pixel-edit');
     setHasPendingReconvert(false);
   }, []);
 
   const clearActiveFrameManualEdits = useCallback(() => {
     if (!activeFrame) return;
+    const targetId = activeFrame.id;
     setFrames((prev) =>
-      prev.map((f) => (f.id === activeFrame.id ? { ...f, editHistory: [], historyIndex: -1 } : f))
+      prev.map((f) => (f.id === targetId ? { ...f, editHistory: [], historyIndex: -1 } : f))
+    );
+    undoStackRef.current = undoStackRef.current.filter(
+      (e) => !(e.type === 'pixel-edit' && e.frameId === targetId)
+    );
+    redoStackRef.current = redoStackRef.current.filter(
+      (e) => !(e.type === 'pixel-edit' && e.frameId === targetId)
     );
     setHasPendingReconvert(false);
   }, [activeFrame]);
@@ -337,6 +362,7 @@ export default function App() {
       try {
         const img = await loadHtmlImageFromUrl(sample.src);
         const id = makeFrameId();
+        clearUndoStacks();
         setErrorMsg(null);
         setActiveSampleId(sample.id);
         setIsPlaying(false);
@@ -366,7 +392,7 @@ export default function App() {
         setErrorMsg('範例圖片載入失敗。');
       }
     },
-    []
+    [clearUndoStacks]
   );
 
   // Initial load
@@ -424,6 +450,7 @@ export default function App() {
 
       // Replace workspace with newly uploaded image(s)
       const firstImg = loaded[0].sourceImage;
+      clearUndoStacks();
       setHasPendingReconvert(false);
       setSpriteSheetCols(0);
       setFrames(loaded);
@@ -461,7 +488,7 @@ export default function App() {
     } catch {
       setErrorMsg('部分圖片無法讀取，請確認格式為 PNG / JPG / WebP。');
     }
-  }, []);
+  }, [clearUndoStacks]);
 
   // Global Ctrl+V clipboard paste support
   useEffect(() => {
@@ -497,12 +524,13 @@ export default function App() {
           return appendFrameEdit(f, next, MAX_HISTORY);
         })
       );
+      pushUndoAction({ type: 'pixel-edit', frameId: targetId });
     },
-    [activeFrame]
+    [activeFrame, pushUndoAction]
   );
 
   const handleUndo = useCallback(() => {
-    if (!activeFrame) return;
+    if (!activeFrame || activeFrame.historyIndex <= 0) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
       prev.map((f) =>
@@ -511,10 +539,18 @@ export default function App() {
           : f
       )
     );
+    for (let i = undoStackRef.current.length - 1; i >= 0; i--) {
+      const entry = undoStackRef.current[i];
+      if (entry.type === 'pixel-edit' && entry.frameId === targetId) {
+        undoStackRef.current.splice(i, 1);
+        redoStackRef.current.push(entry);
+        break;
+      }
+    }
   }, [activeFrame]);
 
   const handleRedo = useCallback(() => {
-    if (!activeFrame) return;
+    if (!activeFrame || activeFrame.historyIndex >= activeFrame.editHistory.length - 1) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
       prev.map((f) =>
@@ -523,7 +559,97 @@ export default function App() {
           : f
       )
     );
+    for (let i = redoStackRef.current.length - 1; i >= 0; i--) {
+      const entry = redoStackRef.current[i];
+      if (entry.type === 'pixel-edit' && entry.frameId === targetId) {
+        redoStackRef.current.splice(i, 1);
+        undoStackRef.current.push(entry);
+        break;
+      }
+    }
   }, [activeFrame]);
+
+  const handleGlobalUndo = useCallback((): boolean => {
+    while (undoStackRef.current.length > 0) {
+      const entry = undoStackRef.current.pop()!;
+      if (entry.type === 'delete-frame') {
+        if (framesRef.current.some((f) => f.id === entry.frame.id)) continue;
+        setFrames((prev) => {
+          if (prev.some((f) => f.id === entry.frame.id)) return prev;
+          const next = [...prev];
+          const insertAt = Math.max(0, Math.min(entry.index, next.length));
+          next.splice(insertAt, 0, entry.frame);
+          return next;
+        });
+        setActiveFrameId(entry.frame.id);
+        redoStackRef.current.push(entry);
+        return true;
+      }
+
+      const target = framesRef.current.find((f) => f.id === entry.frameId);
+      if (!target || target.historyIndex <= 0) continue;
+      setFrames((prev) =>
+        prev.map((f) =>
+          f.id === entry.frameId && f.historyIndex > 0
+            ? { ...f, historyIndex: f.historyIndex - 1 }
+            : f
+        )
+      );
+      setActiveFrameId(entry.frameId);
+      redoStackRef.current.push(entry);
+      return true;
+    }
+
+    if (activeFrame && activeFrame.historyIndex > 0) {
+      handleUndo();
+      return true;
+    }
+    return false;
+  }, [activeFrame, handleUndo]);
+
+  const handleGlobalRedo = useCallback((): boolean => {
+    while (redoStackRef.current.length > 0) {
+      const entry = redoStackRef.current.pop()!;
+      if (entry.type === 'delete-frame') {
+        const cur = framesRef.current;
+        if (cur.length <= 1 || !cur.some((f) => f.id === entry.frame.id)) continue;
+        setFrames((prev) => {
+          if (prev.length <= 1) return prev;
+          const idx = prev.findIndex((f) => f.id === entry.frame.id);
+          if (idx < 0) return prev;
+          const next = prev.filter((f) => f.id !== entry.frame.id);
+          setActiveFrameId((curId) => {
+            if (curId !== entry.frame.id) return curId;
+            const fallbackIdx = Math.min(idx, next.length - 1);
+            return next[fallbackIdx]?.id ?? null;
+          });
+          if (next.length <= 1) setIsPlaying(false);
+          return next;
+        });
+        undoStackRef.current.push(entry);
+        return true;
+      }
+
+      const target = framesRef.current.find((f) => f.id === entry.frameId);
+      if (!target || target.historyIndex >= target.editHistory.length - 1) continue;
+      setFrames((prev) =>
+        prev.map((f) =>
+          f.id === entry.frameId && f.historyIndex < f.editHistory.length - 1
+            ? { ...f, historyIndex: f.historyIndex + 1 }
+            : f
+        )
+      );
+      setActiveFrameId(entry.frameId);
+      undoStackRef.current.push(entry);
+      return true;
+    }
+
+    if (activeFrame && activeFrame.historyIndex < activeFrame.editHistory.length - 1) {
+      handleRedo();
+      return true;
+    }
+    return false;
+  }, [activeFrame, handleRedo]);
 
   const handleAutoRemoveBg = useCallback(() => {
     if (!activeResult) return;
@@ -577,15 +703,19 @@ export default function App() {
 
   const handleDeleteFrame = useCallback((id: string) => {
     const currentFrames = framesRef.current;
-    if (currentFrames.length <= 1 || !currentFrames.some((f) => f.id === id)) return;
+    const removedIdx = currentFrames.findIndex((f) => f.id === id);
+    if (currentFrames.length <= 1 || removedIdx < 0) return;
+    const removedFrame = currentFrames[removedIdx];
     // Removing a frame can also change the shared palette. Only warn if a
     // surviving frame still has manual edits to preserve.
     if (currentFrames.some((f) => f.id !== id && f.historyIndex > 0 && f.editHistory.length > 0)) {
       setHasPendingReconvert(true);
     }
+    pushUndoAction({ type: 'delete-frame', frame: removedFrame, index: removedIdx });
     setFrames((prev) => {
       if (prev.length <= 1) return prev;
       const idx = prev.findIndex((f) => f.id === id);
+      if (idx < 0) return prev;
       const next = prev.filter((f) => f.id !== id);
       setActiveFrameId((curId) => {
         if (curId !== id) return curId;
@@ -595,7 +725,7 @@ export default function App() {
       if (next.length <= 1) setIsPlaying(false);
       return next;
     });
-  }, []);
+  }, [pushUndoAction]);
 
   // Keyboard shortcuts for Edit Mode & Animate Mode
   useEffect(() => {
@@ -610,18 +740,12 @@ export default function App() {
 
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') {
-        if (activeFrame && activeFrame.editHistory.length > 0) {
-          e.preventDefault();
-          if (e.shiftKey) handleRedo();
-          else handleUndo();
-        }
+        const handled = e.shiftKey ? handleGlobalRedo() : handleGlobalUndo();
+        if (handled) e.preventDefault();
         return;
       }
       if (mod && e.key.toLowerCase() === 'y') {
-        if (activeFrame && activeFrame.editHistory.length > 0) {
-          e.preventDefault();
-          handleRedo();
-        }
+        if (handleGlobalRedo()) e.preventDefault();
         return;
       }
 
@@ -653,7 +777,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewMode, activeFrame, handleUndo, handleRedo, handleStepFrame]);
+  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame]);
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
