@@ -89,6 +89,7 @@ interface CanvasViewportProps {
 const FPS_PRESETS = [6, 8, 12, 15, 24];
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
+const SHOW_REAL_SIZE_STORAGE_KEY = 'pixforge:showRealSize';
 
 function PixelGridOverlay({
   width,
@@ -246,7 +247,24 @@ export function CanvasViewport({
   const [splitPos, setSplitPos] = useState<number>(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
-  const [showRealSize, setShowRealSize] = useState<boolean>(true);
+  const [showRealSize, setShowRealSize] = useState<boolean>(() => {
+    try {
+      const saved = window.localStorage.getItem(SHOW_REAL_SIZE_STORAGE_KEY);
+      if (saved === 'false') return false;
+      if (saved === 'true') return true;
+    } catch {
+      // Ignore storage access errors
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHOW_REAL_SIZE_STORAGE_KEY, String(showRealSize));
+    } catch {
+      // Ignore storage access errors
+    }
+  }, [showRealSize]);
   const [showShortcutHelp, setShowShortcutHelp] = useState<boolean>(false);
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 800, h: 520 });
 
