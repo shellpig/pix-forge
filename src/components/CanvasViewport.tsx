@@ -945,7 +945,7 @@ export function CanvasViewport({
       {hasPendingReconvert && (
         <div className="px-4 py-2 bg-amber-500/12 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-100 shrink-0">
           <span>
-            右側轉換參數已變更，但目前正保留你的手動修圖結果（避免意外覆蓋）。
+            轉換參數或動畫影格已變更，目前保留手動修圖結果。套用新轉換將覆蓋手修版本。
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -953,7 +953,7 @@ export function CanvasViewport({
               onClick={onApplyPendingReconvert}
               className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-[#0B0D11] font-medium rounded transition-colors cursor-pointer"
             >
-              套用新參數（覆蓋手修）
+              套用新轉換（覆蓋手修）
             </button>
             <button
               type="button"
