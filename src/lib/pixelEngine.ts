@@ -905,10 +905,20 @@ export function processWorkingBuffer(
 }
 
 /**
+ * Keep the existing multi-step resampling algorithm on both the browser main
+ * thread and inside a module Worker (where document is unavailable).
+ */
+function createResampleCanvas(): HTMLCanvasElement | OffscreenCanvas {
+  return typeof document === 'undefined'
+    ? new OffscreenCanvas(1, 1)
+    : document.createElement('canvas');
+}
+
+/**
  * Multi-step high-quality canvas resample helper.
  */
 function resampleToWorkingBuffer(
-  sourceImage: HTMLImageElement,
+  sourceImage: HTMLImageElement | ImageBitmap,
   sx: number,
   sy: number,
   sw: number,
@@ -916,7 +926,7 @@ function resampleToWorkingBuffer(
   workW: number,
   workH: number
 ): ImageData {
-  let curCanvas = document.createElement('canvas');
+  let curCanvas = createResampleCanvas();
   let curW = Math.max(workW, Math.round(sw));
   let curH = Math.max(workH, Math.round(sh));
 
@@ -925,7 +935,7 @@ function resampleToWorkingBuffer(
     const stepH = Math.max(workH * 2, Math.round(curH * 0.5));
     curCanvas.width = stepW;
     curCanvas.height = stepH;
-    const cctx = curCanvas.getContext('2d');
+    const cctx = curCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!cctx) throw new Error('無法建立瀏覽器 2D Canvas 繪圖環境');
     cctx.imageSmoothingEnabled = true;
     cctx.imageSmoothingQuality = 'high';
@@ -936,10 +946,10 @@ function resampleToWorkingBuffer(
     while (curW > workW * 2 || curH > workH * 2) {
       const nextW = Math.max(workW, Math.round(curW * 0.5));
       const nextH = Math.max(workH, Math.round(curH * 0.5));
-      const nextCanvas = document.createElement('canvas');
+      const nextCanvas = createResampleCanvas();
       nextCanvas.width = nextW;
       nextCanvas.height = nextH;
-      const nctx = nextCanvas.getContext('2d');
+      const nctx = nextCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
       if (!nctx) throw new Error('無法建立瀏覽器 2D Canvas 繪圖環境');
       nctx.imageSmoothingEnabled = true;
       nctx.imageSmoothingQuality = 'high';
@@ -949,10 +959,10 @@ function resampleToWorkingBuffer(
       curH = nextH;
     }
 
-    const workCanvas = document.createElement('canvas');
+    const workCanvas = createResampleCanvas();
     workCanvas.width = workW;
     workCanvas.height = workH;
-    const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    const workCtx = workCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!workCtx) throw new Error('無法建立瀏覽器 2D Canvas 繪圖環境');
     workCtx.imageSmoothingEnabled = true;
     workCtx.imageSmoothingQuality = 'high';
@@ -960,10 +970,10 @@ function resampleToWorkingBuffer(
     return workCtx.getImageData(0, 0, workW, workH);
   }
 
-  const workCanvas = document.createElement('canvas');
+  const workCanvas = createResampleCanvas();
   workCanvas.width = workW;
   workCanvas.height = workH;
-  const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+  const workCtx = workCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
   if (!workCtx) throw new Error('無法建立瀏覽器 2D Canvas 繪圖環境');
   workCtx.imageSmoothingEnabled = true;
   workCtx.imageSmoothingQuality = 'high';
@@ -977,7 +987,7 @@ function resampleToWorkingBuffer(
  * across all frames so sprites never flicker during animation playback.
  */
 export function runBatchPixelConversion(
-  sourceImages: HTMLImageElement[],
+  sourceImages: Array<HTMLImageElement | ImageBitmap>,
   config: PixelEngineConfig
 ): PixelEngineResult[] {
   if (sourceImages.length === 0) return [];
@@ -993,15 +1003,17 @@ export function runBatchPixelConversion(
 
   // Stage 1: Preprocess & downscale every frame
   const preQuantBuffers: Uint8ClampedArray[] = sourceImages.map((sourceImage) => {
-    const sx = Math.max(0, Math.min(1, config.crop.x)) * sourceImage.naturalWidth;
-    const sy = Math.max(0, Math.min(1, config.crop.y)) * sourceImage.naturalHeight;
+    const sourceW = 'naturalWidth' in sourceImage ? sourceImage.naturalWidth : sourceImage.width;
+    const sourceH = 'naturalHeight' in sourceImage ? sourceImage.naturalHeight : sourceImage.height;
+    const sx = Math.max(0, Math.min(1, config.crop.x)) * sourceW;
+    const sy = Math.max(0, Math.min(1, config.crop.y)) * sourceH;
     const sw = Math.max(
       1,
-      Math.min(sourceImage.naturalWidth - sx, config.crop.w * sourceImage.naturalWidth)
+      Math.min(sourceW - sx, config.crop.w * sourceW)
     );
     const sh = Math.max(
       1,
-      Math.min(sourceImage.naturalHeight - sy, config.crop.h * sourceImage.naturalHeight)
+      Math.min(sourceH - sy, config.crop.h * sourceH)
     );
 
     const workImg = resampleToWorkingBuffer(sourceImage, sx, sy, sw, sh, workW, workH);
