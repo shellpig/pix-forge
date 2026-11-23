@@ -229,9 +229,9 @@ export function PixelEditorBar({
 
       {/* Quick Clickable Palette Row for Fast Pixel Touch-up */}
       {palette.length > 0 && (
-        <div className="w-full pt-1.5 border-t border-[#1E2330] flex items-center gap-2 overflow-x-auto">
+        <div className="w-full pt-1.5 border-t border-[#1E2330] flex items-center gap-2 overflow-x-auto overflow-y-hidden studio-scroll">
           <span className="text-[11px] text-[#8B95A8] whitespace-nowrap shrink-0">快速取色</span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 py-1 px-0.5">
             {palette.slice(0, 32).map((hex) => {
               const selected = editor.colorHex.toLowerCase() === hex.toLowerCase();
               return (
