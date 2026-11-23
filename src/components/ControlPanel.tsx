@@ -592,9 +592,9 @@ export function ControlPanel({
               {cleanupDisabledByDither
                 ? '已啟用抖色：雜點清除會抹掉刻意交錯的像素，因此暫時停用；關閉抖色後恢復原選擇。'
                 : config.isolatedPixelMode === 'light'
-                  ? '僅清除周圍 8 格至少 7 格同色、且中心顏色接近的單點；保護高對比眼睛高光。'
+                  ? '鄰近顏色出現至少 4 次、Oklab 色差 ≤0.2 才清除；兩種強度都保護亮暗極值與高光。'
                   : config.isolatedPixelMode === 'strong'
-                    ? '周圍 8 格至少 6 格同色就清除；可能移除刻意設計的單點高光。'
+                    ? '鄰近顏色出現至少 3 次、Oklab 色差 ≤0.3 才清除；仍保留亮暗極值保護。'
                     : '關閉孤立像素清除，保留原本的量化輸出。'}
             </p>
           </div>

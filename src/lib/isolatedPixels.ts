@@ -2,6 +2,14 @@ import { rgbToOklab } from './palettes';
 
 export type IsolatedPixelMode = 'off' | 'light' | 'strong';
 
+// All cleanup thresholds live here so modes stay consistent in every caller.
+export const CLEANUP_RULES = {
+  light: { minCandidateCount: 4, maxColorDelta: 0.2, minAlphaAgreement: 7 },
+  strong: { minCandidateCount: 3, maxColorDelta: 0.3, minAlphaAgreement: 6 },
+} as const;
+
+export const LOCAL_EXTREME_L_MARGIN = 0.12;
+
 export interface IsolatedCleanupSettings {
   isolatedPixelMode: IsolatedPixelMode;
   paletteMode: 'full' | 'auto' | 'preset';
@@ -9,9 +17,9 @@ export interface IsolatedCleanupSettings {
 }
 
 /**
- * Dithering intentionally makes alternating, isolated colors. Keep the
- * user's selected cleanup mode, but bypass it while dithering is active.
- * "full" bypasses dithering in the engine, so cleanup remains available.
+ * Dithering deliberately introduces isolated, alternating pixels. Keep the
+ * user's preference, but bypass cleanup while actual dithering is enabled.
+ * Full-color mode bypasses quantization/dithering, so cleanup stays available.
  */
 export function isCleanupDisabledByDither(config: IsolatedCleanupSettings): boolean {
   return config.paletteMode !== 'full' && config.ditherMode !== 'none';
@@ -22,17 +30,15 @@ export function getEffectiveIsolatedPixelMode(config: IsolatedCleanupSettings): 
 }
 
 /**
- * Remove single-pixel islands via an 8-neighbor majority rule.
+ * An 8-neighbor, palette-preserving single-pixel cleanup pass.
  *
- * - Never mutate the input: all decisions read from a single source snapshot.
- * - Only replace a center pixel if NONE of its 8 neighbors matches it.
- * - Light: >=7 matching neighbors and similar visible Oklab colors.
- * - Strong: >=6 matching neighbors, regardless of contrast.
- * - Fully transparent pixels are one logical color, ignoring hidden RGB.
- * - Skip the outermost row/column to protect silhouette boundaries.
+ * Opaque pixels: choose the closest Oklab color among neighbor groups with
+ * enough votes, unless the center is a local luminance extreme or the color
+ * difference is too large. Strong and Light BOTH protect local extremes.
  *
- * The replacement is always copied from a real neighbor; no new palette
- * colors can be introduced (including on transparent islands/holes).
+ * Transparent pixels / alpha changes: retain the stricter 7/6 vote rules.
+ * Every replacement copies a complete RGBA value from an actual neighbor.
+ * All reads come from the original input and all writes go to a copy.
  */
 export function removeIsolatedPixels(
   data: Uint8ClampedArray,
@@ -41,96 +47,168 @@ export function removeIsolatedPixels(
   mode: IsolatedPixelMode
 ): Uint8ClampedArray {
   if (mode === 'off' || width < 3 || height < 3) return data;
-
   if (data.length !== width * height * 4) {
     throw new Error('孤立像素清除：影像緩衝區尺寸不正確。');
   }
 
+  const rules = CLEANUP_RULES[mode];
   const source = data;
   const output = new Uint8ClampedArray(source);
-  const neighbors = new Uint32Array(8);
-  const minimumAgreement = mode === 'light' ? 7 : 6;
+  const size = width * height;
 
-  // Keep RGB for visible pixels; normalize fully transparent RGB to key 0.
-  const colorKeyAt = (offset: number): number => {
-    if (source[offset + 3] === 0) return 0;
-    return (
-      (source[offset + 3] << 24) |
-      (source[offset] << 16) |
-      (source[offset + 1] << 8) |
-      source[offset + 2]
-    ) >>> 0;
+  // Cache normalized RGBA keys and Oklab once before walking the image.
+  // Alpha=0 has one logical key regardless of its hidden RGB bytes.
+  const keys = new Uint32Array(size);
+  const labL = new Float32Array(size);
+  const labA = new Float32Array(size);
+  const labB = new Float32Array(size);
+  const labCache = new Map<number, { L: number; a: number; b: number }>();
+  for (let index = 0; index < size; index++) {
+    const offset = index * 4;
+    const alpha = source[offset + 3];
+    if (alpha === 0) continue;
+
+    const r = source[offset];
+    const g = source[offset + 1];
+    const b = source[offset + 2];
+    const rgbKey = (r << 16) | (g << 8) | b;
+    keys[index] = ((alpha << 24) | rgbKey) >>> 0;
+
+    let lab = labCache.get(rgbKey);
+    if (!lab) {
+      lab = rgbToOklab(r, g, b);
+      labCache.set(rgbKey, lab);
+    }
+    labL[index] = lab.L;
+    labA[index] = lab.a;
+    labB[index] = lab.b;
+  }
+
+  // Eight neighbors contain at most eight distinct colors. Reuse scratch
+  // arrays to avoid allocating maps or objects for each output pixel.
+  const groupKeys = new Uint32Array(8);
+  const groupCounts = new Uint8Array(8);
+  const groupFirstIndices = new Int32Array(8);
+
+  const copyNeighbor = (centerIndex: number, neighborIndex: number): void => {
+    const dst = centerIndex * 4;
+    const src = neighborIndex * 4;
+    output[dst] = source[src];
+    output[dst + 1] = source[src + 1];
+    output[dst + 2] = source[src + 2];
+    output[dst + 3] = source[src + 3];
   };
 
+  // Do not touch the outermost border: important for sprite silhouettes.
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
-      const centerOffset = (y * width + x) * 4;
-      const centerColor = colorKeyAt(centerOffset);
-      let i = 0;
-      let hasMatchingNeighbor = false;
+      const center = y * width + x;
+      const centerKey = keys[center];
+      const centerAlpha = source[center * 4 + 3];
+      let groupLength = 0;
+      let hasSameColorNeighbor = false;
+      let darkestOpaque = Infinity;
+      let brightestOpaque = -Infinity;
+      let transparentCount = 0;
+      let firstTransparentIndex = -1;
 
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
-          const key = colorKeyAt(((y + dy) * width + x + dx) * 4);
-          neighbors[i++] = key;
-          if (key === centerColor) hasMatchingNeighbor = true;
+          const neighbor = (y + dy) * width + x + dx;
+          const key = keys[neighbor];
+
+          if (key === centerKey) hasSameColorNeighbor = true;
+          if (key === 0) {
+            transparentCount++;
+            if (firstTransparentIndex < 0) firstTransparentIndex = neighbor;
+          } else {
+            const lightness = labL[neighbor];
+            if (lightness < darkestOpaque) darkestOpaque = lightness;
+            if (lightness > brightestOpaque) brightestOpaque = lightness;
+          }
+
+          let group = 0;
+          while (group < groupLength && groupKeys[group] !== key) group++;
+          if (group === groupLength) {
+            groupKeys[group] = key;
+            groupCounts[group] = 1;
+            groupFirstIndices[group] = neighbor;
+            groupLength++;
+          } else {
+            groupCounts[group]++;
+          }
         }
       }
-      if (hasMatchingNeighbor) continue;
 
-      // Boyer-Moore produces the candidate if an 8-neighbor majority exists.
-      // Verify its exact count afterwards (light: 7, strong: 6).
-      let candidate = 0;
-      let votes = 0;
-      for (let j = 0; j < 8; j++) {
-        if (votes === 0) {
-          candidate = neighbors[j];
-          votes = 1;
-        } else if (neighbors[j] === candidate) {
-          votes++;
-        } else {
-          votes--;
-        }
-      }
-      let agreement = 0;
-      for (let j = 0; j < 8; j++) {
-        if (neighbors[j] === candidate) agreement++;
-      }
-      if (agreement < minimumAgreement) continue;
+      // Any matching neighbor means this pixel is part of a connected feature.
+      if (hasSameColorNeighbor) continue;
 
-      const nextAlpha = (candidate >>> 24) & 255;
-      const centerAlpha = source[centerOffset + 3];
-
-      if (mode === 'light' && centerAlpha !== 0 && nextAlpha !== 0) {
-        // Preserve tiny eye highlights, sparks, and intentional accent pixels.
-        const before = rgbToOklab(
-          source[centerOffset],
-          source[centerOffset + 1],
-          source[centerOffset + 2]
-        );
-        const after = rgbToOklab(
-          (candidate >>> 16) & 255,
-          (candidate >>> 8) & 255,
-          candidate & 255
-        );
-        const dL = before.L - after.L;
-        const da = before.a - after.a;
-        const db = before.b - after.b;
-        const distanceSq = dL * dL + 1.35 * (da * da + db * db);
+      // A highlight or a dark accent that lies outside the local luminance
+      // range is meaningful even in Strong mode. No opaque neighbors means
+      // there is no valid luminance range to check.
+      if (centerAlpha !== 0 && darkestOpaque !== Infinity) {
+        const lightness = labL[center];
         if (
-          Math.abs(dL) > 0.09 ||
-          distanceSq > 0.12 * 0.12 ||
-          Math.abs(centerAlpha - nextAlpha) > 40
+          lightness >= brightestOpaque + LOCAL_EXTREME_L_MARGIN ||
+          lightness <= darkestOpaque - LOCAL_EXTREME_L_MARGIN
         ) {
           continue;
         }
       }
 
-      output[centerOffset] = (candidate >>> 16) & 255;
-      output[centerOffset + 1] = (candidate >>> 8) & 255;
-      output[centerOffset + 2] = candidate & 255;
-      output[centerOffset + 3] = nextAlpha;
+      if (centerAlpha === 0) {
+        // Transparent pinhole: only a near-unanimous *single* opaque color
+        // may fill it. No color-distance comparison is meaningful here.
+        let bestGroup = -1;
+        for (let group = 0; group < groupLength; group++) {
+          if (groupKeys[group] === 0 || groupCounts[group] < rules.minAlphaAgreement) continue;
+          if (bestGroup < 0 || groupCounts[group] > groupCounts[bestGroup]) {
+            bestGroup = group;
+          }
+        }
+        if (bestGroup >= 0) copyNeighbor(center, groupFirstIndices[bestGroup]);
+        continue;
+      }
+
+      // Visible isolated center: choose the nearest supported opaque color,
+      // not necessarily the group with the most votes. An alpha change
+      // (including partially transparent colors) still needs 7/6 votes.
+      let bestGroup = -1;
+      let bestDistanceSquared = Infinity;
+      for (let group = 0; group < groupLength; group++) {
+        if (groupKeys[group] === 0 || groupCounts[group] < rules.minCandidateCount) continue;
+        const neighbor = groupFirstIndices[group];
+        if (
+          source[neighbor * 4 + 3] !== centerAlpha &&
+          groupCounts[group] < rules.minAlphaAgreement
+        ) continue;
+
+        const dL = labL[center] - labL[neighbor];
+        const da = labA[center] - labA[neighbor];
+        const db = labB[center] - labB[neighbor];
+        // Standard, unweighted Oklab Euclidean distance.
+        const distanceSquared = dL * dL + da * da + db * db;
+        if (
+          distanceSquared < bestDistanceSquared - 1e-12 ||
+          (Math.abs(distanceSquared - bestDistanceSquared) <= 1e-12 &&
+            (bestGroup < 0 || groupCounts[group] > groupCounts[bestGroup]))
+        ) {
+          bestGroup = group;
+          bestDistanceSquared = distanceSquared;
+        }
+      }
+
+      if (bestGroup >= 0 && bestDistanceSquared <= rules.maxColorDelta ** 2) {
+        copyNeighbor(center, groupFirstIndices[bestGroup]);
+        continue;
+      }
+
+      // Cleanup of an opaque stray point on a transparent background uses
+      // the original strict transparency threshold, not the color threshold.
+      if (transparentCount >= rules.minAlphaAgreement && firstTransparentIndex >= 0) {
+        copyNeighbor(center, firstTransparentIndex);
+      }
     }
   }
 

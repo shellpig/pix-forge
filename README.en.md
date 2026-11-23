@@ -68,7 +68,7 @@ Open the keyboard icon in the toolbar for in-app help.
 
 Sprite Sheets use an **approximately square grid** by default (columns ≈ `Math.ceil(Math.sqrt(frameCount))`), with manual column and single-row options. Before allocating a Canvas, PixForge applies conservative export limits of **16,384 pixels per side** and **16,000,000 total pixels**. Reduce the scale or adjust columns if an export exceeds them. Actual browser limits may be lower.
 
-Isolated-pixel cleanup runs after palette quantization, including support for isolated opaque specks and transparent pinholes. Light mode protects high-contrast highlights; Strong mode can erase intentional single-pixel highlights. Bayer/Floyd dithering temporarily disables cleanup, and your previous setting returns when dithering is turned off.
+Isolated-pixel cleanup runs after palette quantization. For a truly isolated center pixel, it selects the closest supported neighbor color in standard Oklab distance: Light requires at least 4 neighbors and a distance ≤0.2, while Strong requires at least 3 and a distance ≤0.3. Both modes protect pixels whose lightness is at least 0.12 above or below every visible neighbor. Transparent specks and pinholes retain stricter 7/6-neighbor thresholds. Bayer/Floyd dithering temporarily disables cleanup and restores your selection when switched off.
 
 Larger images, more frames, and higher export scales use more memory. Batch processing prefers a browser Web Worker, with a main-thread fallback.
 

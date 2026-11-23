@@ -6,7 +6,6 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 
-// Compile the real browser TypeScript with the existing Vite toolchain.
 const temp = await mkdtemp(join(tmpdir(), 'pix-forge-isolated-'));
 after(() => rm(temp, { recursive: true, force: true }));
 await build({
@@ -23,12 +22,14 @@ await build({
         engine: resolve('src/lib/pixelEngine.ts'),
       },
       formats: ['es'],
-      fileName: (_format, entryName) => `${entryName}.mjs`,
+      fileName: (_format, name) => name + '.mjs',
     },
   },
 });
-const { removeIsolatedPixels, getEffectiveIsolatedPixelMode, isCleanupDisabledByDither } =
-  await import(pathToFileURL(join(temp, 'isolated.mjs')).href);
+const {
+  removeIsolatedPixels, getEffectiveIsolatedPixelMode, isCleanupDisabledByDither,
+  CLEANUP_RULES, LOCAL_EXTREME_L_MARGIN,
+} = await import(pathToFileURL(join(temp, 'isolated.mjs')).href);
 const { processWorkingBuffer, DEFAULT_ENGINE_CONFIG } =
   await import(pathToFileURL(join(temp, 'engine.mjs')).href);
 
@@ -39,78 +40,157 @@ const make = (w, h, color) => {
   return bytes;
 };
 const put = (bytes, w, x, y, rgba) => bytes.set(rgba, (y * w + x) * 4);
-const pixel = (bytes, w, x, y) => Array.from(bytes.slice((y * w + x) * 4, (y * w + x) * 4 + 4));
+const pixel = (bytes, w, x, y) =>
+  Array.from(bytes.slice((y * w + x) * 4, (y * w + x) * 4 + 4));
+const neighborhood = (centerColor, neighborColors) => {
+  assert.equal(neighborColors.length, 8);
+  const bytes = make(5, 5, RGBA(128));
+  put(bytes, 5, 2, 2, centerColor);
+  const positions = [[1,1], [2,1], [3,1], [1,2], [3,2], [1,3], [2,3], [3,3]];
+  positions.forEach(([x,y], i) => put(bytes, 5, x, y, neighborColors[i]));
+  return bytes;
+};
 
-test('light clears only close-color islands with 7/8 or 8/8 neighbor support', () => {
-  const input = make(5, 5, RGBA(100));
-  put(input, 5, 2, 2, RGBA(108));
+test('config constants define distinct color and alpha rules', () => {
+  assert.deepEqual(CLEANUP_RULES.light, {
+    minCandidateCount: 4, maxColorDelta: 0.2, minAlphaAgreement: 7,
+  });
+  assert.deepEqual(CLEANUP_RULES.strong, {
+    minCandidateCount: 3, maxColorDelta: 0.3, minAlphaAgreement: 6,
+  });
+  assert.equal(LOCAL_EXTREME_L_MARGIN, 0.12);
+});
+
+test('light replaces a close-color isolated point with only four votes', () => {
+  const input = neighborhood(RGBA(108), [
+    RGBA(100), RGBA(100), RGBA(100), RGBA(100),
+    RGBA(102), RGBA(104), RGBA(106), RGBA(110),
+  ]);
   const original = new Uint8ClampedArray(input);
-  const out = removeIsolatedPixels(input, 5, 5, 'light');
-  assert.deepEqual(pixel(out, 5, 2, 2), RGBA(100));
-  assert.deepEqual(input, original, 'input must remain unchanged');
-  assert.notStrictEqual(out, input);
+  const result = removeIsolatedPixels(input, 5, 5, 'light');
+  assert.deepEqual(pixel(result, 5, 2, 2), RGBA(100));
+  assert.deepEqual(input, original, 'the source snapshot must never be mutated');
+  assert.notStrictEqual(result, input);
 });
 
-test('light protects a high-contrast eye glint, strong removes it', () => {
-  const input = make(5, 5, RGBA(35));
-  put(input, 5, 2, 2, RGBA(245));
-  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(245));
-  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(35));
+test('strong needs three matching neighbors, while light needs four', () => {
+  const colors = [
+    RGBA(105), RGBA(105), RGBA(105),
+    RGBA(98), RGBA(102), RGBA(110), RGBA(112), RGBA(118),
+  ];
+  const input = neighborhood(RGBA(115), colors);
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(115));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(105));
+
+  const withFour = neighborhood(RGBA(115), [...colors.slice(0, 3), RGBA(105), ...colors.slice(4)]);
+  assert.deepEqual(pixel(removeIsolatedPixels(withFour, 5, 5, 'light'), 5, 2, 2), RGBA(105));
 });
 
-test('strong uses a 6/8 majority, while light requires 7/8', () => {
-  const input = make(5, 5, RGBA(90));
-  put(input, 5, 2, 2, RGBA(94));
-  put(input, 5, 1, 1, RGBA(112));
-  put(input, 5, 3, 3, RGBA(115));
-  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(94));
-  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(90));
+test('both modes protect a luminance-maximum highlight and luminance-minimum dark point', () => {
+  const bright = neighborhood(RGBA(245), Array(8).fill(RGBA(35)));
+  const dark = neighborhood(RGBA(10), Array(8).fill(RGBA(200)));
+  for (const mode of ['light', 'strong']) {
+    assert.deepEqual(pixel(removeIsolatedPixels(bright, 5, 5, mode), 5, 2, 2), RGBA(245));
+    assert.deepEqual(pixel(removeIsolatedPixels(dark, 5, 5, mode), 5, 2, 2), RGBA(10));
+  }
 });
 
-test('do not alter connected two-pixel strokes, including diagonal connections', () => {
+test('light retains a saturated red accent over gray; strong replaces it within the wider delta', () => {
+  // Standard Oklab distance (220,50,50) -> gray(128) is about 0.2065;
+  // the two lightness values differ by only 0.0133, so extreme protection does not apply.
+  const input = neighborhood(RGBA(220, 50, 50), Array(8).fill(RGBA(128)));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(220, 50, 50));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(128));
+});
+
+test('closest eligible color beats the most frequent color in Strong mode', () => {
+  const input = neighborhood(RGBA(120), [
+    RGBA(80), RGBA(80), RGBA(80), RGBA(80), RGBA(80),
+    RGBA(118), RGBA(118), RGBA(118),
+  ]);
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(118));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(80));
+});
+
+test('two connected pixels, even diagonally, are not isolated', () => {
   const input = make(7, 7, RGBA(100));
   put(input, 7, 3, 3, RGBA(255));
   put(input, 7, 4, 4, RGBA(255));
-  const out = removeIsolatedPixels(input, 7, 7, 'strong');
-  assert.deepEqual(pixel(out, 7, 3, 3), RGBA(255));
-  assert.deepEqual(pixel(out, 7, 4, 4), RGBA(255));
+  const result = removeIsolatedPixels(input, 7, 7, 'strong');
+  assert.deepEqual(pixel(result, 7, 3, 3), RGBA(255));
+  assert.deepEqual(pixel(result, 7, 4, 4), RGBA(255));
 });
 
-test('transparent RGB is normalized: erase opaque specks and fill transparent pinholes', () => {
-  const empty = make(5, 5, RGBA(201, 77, 9, 0));
-  put(empty, 5, 2, 2, RGBA(9, 60, 80));
-  assert.deepEqual(pixel(removeIsolatedPixels(empty, 5, 5, 'light'), 5, 2, 2), RGBA(0, 0, 0, 0));
+test('transparent neighbors ignore hidden RGB; replacement copies the real neighbor RGBA', () => {
+  const background = RGBA(201, 77, 9, 0);
+  const speck = neighborhood(RGBA(9, 60, 80), Array(8).fill(background));
+  assert.deepEqual(pixel(removeIsolatedPixels(speck, 5, 5, 'light'), 5, 2, 2), background);
 
-  const filled = make(5, 5, RGBA(51, 120, 90));
-  put(filled, 5, 2, 2, RGBA(255, 12, 9, 0));
-  assert.deepEqual(pixel(removeIsolatedPixels(filled, 5, 5, 'light'), 5, 2, 2), RGBA(51, 120, 90));
+  const mixedInvisible = neighborhood(RGBA(9, 60, 80), [
+    RGBA(100, 3, 8, 0), RGBA(2, 200, 8, 0), RGBA(0, 0, 0, 0), RGBA(2, 2, 2, 0),
+    RGBA(100, 200, 3, 0), RGBA(9, 9, 9, 0), RGBA(0, 0, 0, 0), RGBA(255, 255, 255, 0),
+  ]);
+  assert.equal(pixel(removeIsolatedPixels(mixedInvisible, 5, 5, 'light'), 5, 2, 2)[3], 0);
 });
 
-test('skip the outer border entirely', () => {
+test('transparent holes only fill from a single color with 7/6 matching votes', () => {
+  const filled = neighborhood(RGBA(255, 12, 9, 0), Array(8).fill(RGBA(51, 120, 90)));
+  for (const mode of ['light', 'strong']) {
+    assert.deepEqual(pixel(removeIsolatedPixels(filled, 5, 5, mode), 5, 2, 2), RGBA(51, 120, 90));
+  }
+  const neighbors = [...Array(6).fill(RGBA(51, 120, 90)), RGBA(49, 118, 88), RGBA(52, 121, 91)];
+  const sixVotes = neighborhood(RGBA(255, 12, 9, 0), neighbors);
+  assert.deepEqual(pixel(removeIsolatedPixels(sixVotes, 5, 5, 'light'), 5, 2, 2), RGBA(255, 12, 9, 0));
+  assert.deepEqual(pixel(removeIsolatedPixels(sixVotes, 5, 5, 'strong'), 5, 2, 2), RGBA(51, 120, 90));
+});
+
+test('opaque speck is cleared only with enough transparent neighbors', () => {
+  const center = RGBA(100);
+  const five = neighborhood(center, [
+    ...Array(5).fill(RGBA(0, 0, 0, 0)), RGBA(90), RGBA(110), RGBA(112),
+  ]);
+  assert.deepEqual(pixel(removeIsolatedPixels(five, 5, 5, 'strong'), 5, 2, 2), center);
+  const six = neighborhood(center, [
+    ...Array(6).fill(RGBA(0, 0, 0, 0)), RGBA(90), RGBA(110),
+  ]);
+  assert.equal(pixel(removeIsolatedPixels(six, 5, 5, 'strong'), 5, 2, 2)[3], 0);
+  assert.deepEqual(pixel(removeIsolatedPixels(six, 5, 5, 'light'), 5, 2, 2), center);
+});
+
+test('local luminance extreme guard runs before a possible transparent cleanup', () => {
+  const input = neighborhood(RGBA(245), [
+    ...Array(6).fill(RGBA(0, 0, 0, 0)), RGBA(35), RGBA(40),
+  ]);
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(245));
+});
+
+test('snapshot prevents a 3-vote group becoming 4 votes during left-to-right processing', () => {
+  const input = make(7, 7, RGBA(110));
+  put(input, 7, 2, 2, RGBA(116)); // First center: four 110-color neighbors.
+  put(input, 7, 3, 3, RGBA(117)); // Later center: only three 110-color neighbors.
+  put(input, 7, 3, 2, RGBA(130));
+  put(input, 7, 1, 3, RGBA(129));
+  put(input, 7, 2, 3, RGBA(128));
+  put(input, 7, 2, 4, RGBA(132));
+  put(input, 7, 3, 4, RGBA(133));
+  const out = removeIsolatedPixels(input, 7, 7, 'light');
+  assert.deepEqual(pixel(out, 7, 2, 2), RGBA(110));
+  assert.deepEqual(pixel(out, 7, 3, 3), RGBA(117), 'must use the original three votes, not an updated neighbor');
+});
+
+test('the outer image border is left untouched', () => {
   const input = make(5, 5, RGBA(60));
   put(input, 5, 0, 2, RGBA(70));
-  const output = removeIsolatedPixels(input, 5, 5, 'strong');
-  assert.deepEqual(pixel(output, 5, 0, 2), RGBA(70));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 0, 2), RGBA(70));
 });
 
-test('read from original snapshot, never cascade modifications across neighbors', () => {
-  const input = make(7, 5, RGBA(100));
-  put(input, 7, 2, 2, RGBA(104));
-  put(input, 7, 3, 2, RGBA(105));
-  put(input, 7, 4, 2, RGBA(106));
-  const output = removeIsolatedPixels(input, 7, 5, 'light');
-  assert.deepEqual(pixel(output, 7, 2, 2), RGBA(100));
-  assert.deepEqual(pixel(output, 7, 3, 2), RGBA(105), 'middle pixel originally has only 6 matching neighbors');
-  assert.deepEqual(pixel(output, 7, 4, 2), RGBA(100));
-});
-
-test('off mode leaves the buffer unchanged; reject malformed buffer dimensions in active mode', () => {
+test('off mode is a no-op; active mode checks buffer dimensions', () => {
   const input = make(3, 3, RGBA(99));
   assert.deepEqual(removeIsolatedPixels(input, 3, 3, 'off'), input);
   assert.throws(() => removeIsolatedPixels(input, 4, 4, 'light'), /尺寸不正確/);
 });
 
-test('dithering suppresses cleanup while preserving the selected mode', () => {
+test('dithering disables cleanup but does not erase the saved mode', () => {
   const settings = { isolatedPixelMode: 'light', paletteMode: 'auto', ditherMode: 'floyd' };
   assert.equal(isCleanupDisabledByDither(settings), true);
   assert.equal(getEffectiveIsolatedPixelMode(settings), 'off');
@@ -119,33 +199,26 @@ test('dithering suppresses cleanup while preserving the selected mode', () => {
   assert.equal(getEffectiveIsolatedPixelMode({ ...settings, paletteMode: 'full' }), 'light');
 });
 
-test('single-buffer conversion applies cleanup even in full-color mode', () => {
+test('single-buffer full-color conversion follows the revised rules and used-color count', () => {
   const input = make(5, 5, RGBA(100));
-  put(input, 5, 2, 2, RGBA(240));
+  put(input, 5, 2, 2, RGBA(108)); // Old 240 highlight would be protected now.
   const config = {
     ...DEFAULT_ENGINE_CONFIG,
-    targetW: 5,
-    targetH: 5,
-    paletteMode: 'full',
-    downscaleMode: 'area',
-    ditherMode: 'none',
-    isolatedPixelMode: 'strong',
-    outlineStrength: 0,
-    smoothness: 0,
-    preSharpen: 0,
-    contrast: 0,
-    saturation: 0,
+    targetW: 5, targetH: 5,
+    paletteMode: 'full', downscaleMode: 'area',
+    ditherMode: 'none', isolatedPixelMode: 'strong',
+    outlineStrength: 0, smoothness: 0, preSharpen: 0,
+    contrast: 0, saturation: 0,
   };
   const result = processWorkingBuffer(input, 5, 5, 5, 5, 1, config);
   assert.deepEqual(pixel(result.data, 5, 2, 2), RGBA(100));
   assert.equal(result.uniqueColorCount, 1);
 });
 
-test('batch and single conversion both route through the same cleanup helper', async () => {
+test('single-buffer and batch conversion both call the shared helper', async () => {
   const engine = await readFile('src/lib/pixelEngine.ts', 'utf8');
   const panel = await readFile('src/components/ControlPanel.tsx', 'utf8');
   assert.match(engine, /const finalPixels = removeIsolatedPixels\(/);
   assert.match(engine, /const finalBuffers = preQuantBuffers\.map\(\(buf\) =>\s*removeIsolatedPixels\(/);
   assert.match(panel, /disabled=\{cleanupDisabledByDither\}/);
-  assert.match(panel, /isCleanupDisabledByDither\(config\)/);
 });
