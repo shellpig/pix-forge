@@ -71,6 +71,7 @@ interface CanvasViewportProps {
   onReorderFrames: (fromIndex: number, toIndex: number) => void;
   onDeleteFrame: (id: string) => void;
   onUploadFiles: (files: File[], mode: 'replace' | 'append') => void;
+  onOpenUpload: () => void;
   // Editor & viewport callbacks
   onUpdateEditor: (patch: Partial<PixelEditorState>) => void;
   onCommitImageData: (next: ImageData) => void;
@@ -205,6 +206,7 @@ export function CanvasViewport({
   onReorderFrames,
   onDeleteFrame,
   onUploadFiles,
+  onOpenUpload,
   onUpdateEditor,
   onCommitImageData,
   onUndo,
@@ -227,7 +229,6 @@ export function CanvasViewport({
   const cropPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual1xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual2xCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingWheelAnchorRef = useRef<{
     clientX: number;
     clientY: number;
@@ -816,14 +817,6 @@ export function CanvasViewport({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files ? Array.from(e.target.files).filter((f) => f.type.startsWith('image/')) : [];
-    if (files.length > 0) {
-      onUploadFiles(files, 'replace');
-    }
-    e.target.value = '';
-  };
-
   const brushPreviewRect = (() => {
     if (viewMode !== 'edit' || !hoverPixel || !result) return null;
     const isSingleCellTool =
@@ -857,29 +850,10 @@ export function CanvasViewport({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-
       {/* Compact single-row toolbar: horizontally scrolls on narrow viewports
           instead of wrapping into additional rows and shrinking the canvas. */}
       <div className="shrink-0 border-b border-[#222733] bg-[#0F1218]">
         <div className="flex items-center gap-2 px-3 py-1.5 overflow-x-auto studio-scroll whitespace-nowrap">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title={t('toolbar.uploadTitle')}
-            className="inline-flex shrink-0 items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
-          >
-            <ImagePlus className="w-3.5 h-3.5 text-sky-400" />
-            {t('toolbar.upload')}
-          </button>
-
           <select
             aria-label={t('toolbar.sampleAria')}
             title={t('toolbar.sampleTitle')}
@@ -1128,7 +1102,7 @@ export function CanvasViewport({
           >
         {!sourceImage ? (
           <div
-            onClick={() => fileInputRef.current?.click()}
+            onClick={onOpenUpload}
             className="max-w-md w-full border border-dashed border-[#333B4D] hover:border-sky-400/60 bg-[#12151C] rounded-lg p-10 text-center cursor-pointer transition-colors"
           >
             <ImagePlus className="w-8 h-8 text-sky-400 mx-auto mb-3" />

@@ -3,7 +3,6 @@ import {
   ArrowLeftRight,
   Check,
   Copy,
-  Crop,
   Download,
   Film,
   FolderArchive,
@@ -45,7 +44,6 @@ interface ControlPanelProps {
   onUpdateConfig: (patch: Partial<PixelEngineConfig>) => void;
   onSelectDimensions: (w: number, h: number) => void;
   onResetConfig: () => void;
-  onOpenCropMode: () => void;
   onPickColor: (hex: string) => void;
   onDownloadPng: () => void;
   onCopyPng: () => Promise<void>;
@@ -95,7 +93,6 @@ export function ControlPanel({
   onUpdateConfig,
   onSelectDimensions,
   onResetConfig,
-  onOpenCropMode,
   onPickColor,
   onDownloadPng,
   onCopyPng,
@@ -161,20 +158,10 @@ export function ControlPanel({
       <div className="flex-1 overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
         {/* Section 1: Output Resolution & Crop */}
         <section className="p-4 space-y-3.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
-              {t('panel.resolution')}
-              {frameCount > 1 ? t('panel.resolutionShared') : ''}
-            </h2>
-            <button
-              type="button"
-              onClick={onOpenCropMode}
-              className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
-            >
-              <Crop className="w-3.5 h-3.5" />
-              {t('panel.adjustCrop')}
-            </button>
-          </div>
+          <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
+            {t('panel.resolution')}
+            {frameCount > 1 ? t('panel.resolutionShared') : ''}
+          </h2>
 
           <div className="flex items-center gap-2">
             <label className="flex-1">

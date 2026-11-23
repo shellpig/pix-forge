@@ -172,7 +172,6 @@ export const en: TranslationDict = {
   // Control Panel
   'panel.resolution': 'Output Resolution',
   'panel.resolutionShared': ' (All Frames)',
-  'panel.adjustCrop': 'Crop Box',
   'panel.width': 'Width (W)',
   'panel.height': 'Height (H)',
   'panel.swapTitle': 'Swap width and height',

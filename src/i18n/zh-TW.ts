@@ -169,7 +169,6 @@ export const zhTW = {
   // Control Panel
   'panel.resolution': '輸出像素尺寸',
   'panel.resolutionShared': '（全組共用）',
-  'panel.adjustCrop': '調整裁切框',
   'panel.width': '寬度 (W)',
   'panel.height': '高度 (H)',
   'panel.swapTitle': '對調寬高',

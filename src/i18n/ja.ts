@@ -171,7 +171,6 @@ export const ja: TranslationDict = {
   // Control Panel
   'panel.resolution': '出力ドットサイズ',
   'panel.resolutionShared': '（全コマ共通）',
-  'panel.adjustCrop': 'トリミング枠',
   'panel.width': '幅 (W)',
   'panel.height': '高さ (H)',
   'panel.swapTitle': '幅と高さを入れ替え',

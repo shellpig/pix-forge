@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe } from 'lucide-react';
+import { Globe, ImagePlus } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { PixelEditorState } from './components/PixelEditorBar';
@@ -158,6 +158,7 @@ export default function App() {
   const activeFrameIdRef = useRef(activeFrameId);
   activeFrameIdRef.current = activeFrameId;
   const workspaceReadyRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const undoStackRef = useRef<UndoActionEntry[]>([]);
   const redoStackRef = useRef<UndoActionEntry[]>([]);
 
@@ -1123,30 +1124,53 @@ export default function App() {
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
       {/* Top Navigation Bar */}
-      <header className="h-13 px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[1fr_auto_1fr] items-center gap-6 shrink-0">
+      <header className="h-13 px-3 sm:px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 sm:gap-6 shrink-0">
         {/* Zone 1: Single-line Brand Wordmark */}
         <span className="text-base font-bold tracking-tight text-[#F8FAFC] whitespace-nowrap shrink-0 justify-self-start">
           PixForge
         </span>
 
         {/* Zone 2: Concise Single-Line Mode Links */}
-        <nav className="flex items-center gap-6 h-full overflow-x-auto justify-self-center">
-          {VIEW_TABS.map((tab) => {
-            const active = viewMode === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleChangeViewMode(tab.id)}
-                className={`relative h-full inline-flex items-center text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  active ? 'text-[#F8FAFC] font-medium' : 'text-[#8B95A8] hover:text-[#E2E8F0]'
-                }`}
-              >
-                {t(tab.labelKey)}
-                {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />}
-              </button>
-            );
-          })}
+        <nav className="flex items-center gap-3 sm:gap-6 h-full min-w-0">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              if (files.length > 0) handleUploadFiles(files, 'replace');
+              event.currentTarget.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title={t('toolbar.uploadTitle')}
+            className="inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
+          >
+            <ImagePlus className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+            {t('toolbar.upload')}
+          </button>
+          <div className="flex items-center gap-4 sm:gap-6 h-full overflow-x-auto studio-scroll">
+            {VIEW_TABS.map((tab) => {
+              const active = viewMode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleChangeViewMode(tab.id)}
+                  className={`relative h-full inline-flex items-center text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    active ? 'text-[#F8FAFC] font-medium' : 'text-[#8B95A8] hover:text-[#E2E8F0]'
+                  }`}
+                >
+                  {t(tab.labelKey)}
+                  {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />}
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         {/* Zone 3: Compact Language Switcher */}
@@ -1212,6 +1236,7 @@ export default function App() {
           onReorderFrames={handleReorderFrames}
           onDeleteFrame={handleDeleteFrame}
           onUploadFiles={handleUploadFiles}
+          onOpenUpload={() => fileInputRef.current?.click()}
           onUpdateEditor={(patch) => setEditor((p) => ({ ...p, ...patch }))}
           onCommitImageData={handleCommitImageData}
           onUndo={handleUndo}
@@ -1253,7 +1278,6 @@ export default function App() {
           onUpdateConfig={handleUpdateConfig}
           onSelectDimensions={handleSelectDimensions}
           onResetConfig={handleResetConfig}
-          onOpenCropMode={() => handleChangeViewMode('crop')}
           onPickColor={handlePickColor}
           onDownloadPng={handleDownloadPng}
           onCopyPng={handleCopyPng}
