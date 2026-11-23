@@ -5,6 +5,7 @@ export const en: TranslationDict = {
   'app.title': 'PixForge — High-Res to Pixel Art Studio',
   'app.close': 'Close',
   'app.langAria': 'Switch interface language',
+  'app.sourceAndLicense': 'Source Code & License',
 
   // View Tabs
   'tab.sideBySide': 'Side by Side',

@@ -1,11 +1,34 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import {execFileSync} from 'node:child_process';
 import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+const sourceRepo = 'https://github.com/shellpig/pix-forge';
+const commitPattern = /^[0-9a-f]{40}$/i;
+
+function getSourceUrl(): string {
+  let commit = process.env.WORKERS_CI_COMMIT_SHA?.trim();
+  if (!commit || !commitPattern.test(commit)) {
+    try {
+      commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: import.meta.dirname,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      return sourceRepo;
+    }
+  }
+  return commitPattern.test(commit) ? `${sourceRepo}/tree/${commit}` : sourceRepo;
+}
+
 export default defineConfig(() => {
   return {
+    define: {
+      'import.meta.env.PIXFORGE_SOURCE_URL': JSON.stringify(getSourceUrl()),
+    },
     plugins: [
       react(),
       tailwindcss(),

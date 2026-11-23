@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, ImagePlus } from 'lucide-react';
+import { CodeXml, Globe, ImagePlus } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { PixelEditorState } from './components/PixelEditorBar';
@@ -1138,14 +1138,14 @@ export default function App() {
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
       {/* Top Navigation Bar */}
-      <header className="h-13 px-3 sm:px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 sm:gap-6 shrink-0">
+      <header className="h-13 px-2 sm:px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 sm:gap-6 shrink-0">
         {/* Zone 1: Single-line Brand Wordmark */}
         <span className="text-base font-bold tracking-tight text-[#F8FAFC] whitespace-nowrap shrink-0 justify-self-start">
           PixForge
         </span>
 
         {/* Zone 2: Concise Single-Line Mode Links */}
-        <nav className="flex items-center gap-3 sm:gap-6 h-full min-w-0">
+        <nav className="flex items-center gap-2 sm:gap-6 h-full min-w-0">
           <input
             ref={fileInputRef}
             type="file"
@@ -1162,7 +1162,7 @@ export default function App() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             title={t('toolbar.uploadTitle')}
-            className="inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
+            className="inline-flex shrink-0 items-center gap-1.5 px-2 sm:px-3 py-1.5 text-sm font-medium whitespace-nowrap text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
             {t('toolbar.upload')}
@@ -1187,21 +1187,34 @@ export default function App() {
           </div>
         </nav>
 
-        {/* Zone 3: Compact Language Switcher */}
-        <div className="justify-self-end shrink-0 flex items-center gap-1.5 px-2 py-1 bg-[#161A23] border border-[#2D3546] rounded-md">
-          <Globe className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
-          <select
-            aria-label={t('app.langAria')}
-            value={locale}
-            onChange={(e) => setLocale(e.target.value as Locale)}
-            className="bg-transparent text-xs text-[#E2E8F0] outline-none cursor-pointer"
+        {/* Zone 3: Source and Language */}
+        <div className="justify-self-end flex flex-col items-center sm:flex-row sm:gap-2">
+          <a
+            href={import.meta.env.PIXFORGE_SOURCE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t('app.sourceAndLicense')}
+            title={t('app.sourceAndLicense')}
+            className="inline-flex items-center gap-1.5 rounded-md p-1 text-xs text-[#CBD5E1] hover:text-sky-300 whitespace-nowrap"
           >
-            {LOCALE_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id} className="bg-[#161A23] text-[#E2E8F0]">
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            <CodeXml className="size-4 shrink-0" aria-hidden="true" />
+            <span className="hidden xl:inline">{t('app.sourceAndLicense')}</span>
+          </a>
+          <div className="flex items-center sm:gap-1.5 px-1.5 sm:px-2 py-1 bg-[#161A23] border border-[#2D3546] rounded-md">
+            <Globe className="hidden sm:block w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+            <select
+              aria-label={t('app.langAria')}
+              value={locale}
+              onChange={(e) => setLocale(e.target.value as Locale)}
+              className="bg-transparent text-xs text-[#E2E8F0] outline-none cursor-pointer"
+            >
+              {LOCALE_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id} className="bg-[#161A23] text-[#E2E8F0]">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </header>
 

@@ -3,6 +3,7 @@ export const zhTW = {
   'app.title': 'PixForge — 高解析轉像素工坊',
   'app.close': '關閉',
   'app.langAria': '切換介面語言',
+  'app.sourceAndLicense': '原始碼與授權',
 
   // View Tabs
   'tab.sideBySide': '並排對照',

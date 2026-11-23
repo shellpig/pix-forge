@@ -5,6 +5,7 @@ export const ja: TranslationDict = {
   'app.title': 'PixForge — 高解像度ドット絵変換スタジオ',
   'app.close': '閉じる',
   'app.langAria': '表示言語を切り替え',
+  'app.sourceAndLicense': 'ソースコードとライセンス',
 
   // View Tabs
   'tab.sideBySide': '並列比較',
