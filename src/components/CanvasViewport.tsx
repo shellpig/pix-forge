@@ -588,8 +588,8 @@ export function CanvasViewport({
   };
 
   const targetRatio = config.targetW / config.targetH;
-  const availW = Math.max(220, viewportSize.w - (viewMode === 'side-by-side' ? 96 : 64));
-  const availH = Math.max(200, viewportSize.h - 80);
+  const availW = Math.max(180, viewportSize.w - (viewMode === 'side-by-side' ? 72 : 40));
+  const availH = Math.max(120, viewportSize.h - 48);
 
   const singleSlotMaxW = viewMode === 'side-by-side' ? Math.floor((availW - 24) / 2) : availW;
   const singleSlotMaxH = availH;
@@ -651,7 +651,7 @@ export function CanvasViewport({
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 min-h-[420px] bg-[#0B0D11] relative select-none"
+      className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#0B0D11] relative select-none"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -899,7 +899,7 @@ export function CanvasViewport({
       {/* Main Canvas Stage */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto studio-scroll flex items-center justify-center p-6 relative"
+        className="flex-1 min-h-0 overflow-auto studio-scroll flex items-center justify-center p-3 sm:p-4 relative"
       >
         {!sourceImage ? (
           <div
