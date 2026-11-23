@@ -101,15 +101,15 @@ export function FrameTimelineBar({
         <button
           type="button"
           onClick={() => appendInputRef.current?.click()}
-          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
-          <Plus className="w-3.5 h-3.5 text-sky-400" />
+          <Plus className="w-3 h-3 text-sky-400" />
           追加影格
         </button>
       </div>
 
       {!isSingleFrame && (
-        <div className="flex items-center gap-2 overflow-x-auto studio-scroll pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto studio-scroll pb-0.5">
         {frames.map((frame, index) => {
           const isActive = frame.id === activeFrameId;
           const isDragging = dragIndex === index;
@@ -147,7 +147,7 @@ export function FrameTimelineBar({
               onClick={() => onSelectFrame(frame.id)}
               onDoubleClick={() => onEditFrame(frame.id)}
               title={`${frame.name}（雙擊進入像素精修，拖曳可調整順序）`}
-              className={`group relative shrink-0 w-[68px] rounded border transition-all cursor-pointer select-none ${
+              className={`group relative shrink-0 w-[52px] rounded border transition-all cursor-pointer select-none ${
                 isActive
                   ? 'border-sky-400 bg-[#172130]'
                   : 'border-[#252B39] bg-[#141821] hover:border-[#3A445C]'
@@ -156,7 +156,7 @@ export function FrameTimelineBar({
               }`}
             >
               {/* Thumbnail Viewport */}
-              <div className="h-[50px] w-full p-1 bg-checkerboard flex items-center justify-center overflow-hidden rounded-t-[3px] relative">
+              <div className="h-[38px] w-full p-0.5 bg-checkerboard flex items-center justify-center overflow-hidden rounded-t-[3px] relative">
                 <FrameThumbCanvas imageData={frame.imageData} />
 
                 {/* Hover Quick Actions: Edit single frame / Delete frame */}
@@ -193,7 +193,7 @@ export function FrameTimelineBar({
               </div>
 
               {/* Footer Row: Index + Edited Indicator */}
-              <div className="px-1.5 py-0.5 flex items-center justify-between text-[10px] font-mono tabular-nums">
+              <div className="px-1 py-0.5 flex items-center justify-between text-[9px] font-mono tabular-nums">
                 <span className={isActive ? 'text-sky-300 font-semibold' : 'text-[#94A3B8]'}>
                   #{String(index + 1).padStart(2, '0')}
                 </span>
@@ -211,7 +211,7 @@ export function FrameTimelineBar({
         <button
           type="button"
           onClick={() => appendInputRef.current?.click()}
-          className="shrink-0 w-[64px] h-[70px] rounded border border-dashed border-[#2D3546] hover:border-sky-400/60 bg-[#12161F] hover:bg-[#171C28] flex flex-col items-center justify-center gap-1 text-[#8B95A8] hover:text-sky-300 transition-colors cursor-pointer"
+          className="shrink-0 w-[52px] h-[52px] rounded border border-dashed border-[#2D3546] hover:border-sky-400/60 bg-[#12161F] hover:bg-[#171C28] flex flex-col items-center justify-center gap-1 text-[#8B95A8] hover:text-sky-300 transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span className="text-[10px]">加影格</span>
