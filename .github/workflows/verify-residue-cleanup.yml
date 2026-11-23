@@ -1,0 +1,61 @@
+name: Temporary template residue cleanup verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-residue-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate lockfile after removing unused packages
+        run: npm install --package-lock-only --no-audit --no-fund
+      - name: Verify lockfile installation
+        run: npm ci --no-audit --no-fund
+      - name: Verify retained unit tests
+        run: npm test
+      - name: Verify TypeScript compilation
+        run: npm run lint
+      - name: Verify cross-platform clean command
+        run: |
+          node -e "require('node:fs').mkdirSync('dist', {recursive:true});require('node:fs').writeFileSync('dist/temporary.txt', 'test')"
+          npm run clean
+          test ! -e dist
+          npm run clean
+      - name: Verify production build
+        run: npm run build
+      - name: Verify expected project outputs and removed residue
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          for(const p of ['motion','autoprefixer']){
+            assert.equal(pkg.dependencies?.[p], undefined, p+' must not be a direct dependency');
+            assert.equal(pkg.devDependencies?.[p], undefined, p+' must not be a direct devDependency');
+            assert.equal(lock.packages[''].dependencies?.[p],undefined);
+            assert.equal(lock.packages[''].devDependencies?.[p],undefined);
+          }
+          assert.equal(fs.existsSync('metadata.json'),false);
+          assert.equal(fs.readFileSync('.gitignore','utf8').includes('!.env.example'),false);
+          assert.equal(pkg.scripts.clean.includes('server.js'),false);
+          assert.equal(fs.existsSync('dist/index.html'),true);
+          assert.equal(fs.existsSync('dist/src/assets/images/sample_rpg_knight_1795397004570.jpg'),true);
+          console.log('All cleanup and output checks passed.');
+          NODE
+      - name: Commit verified package-lock.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build: update lockfile after removing unused animation and CSS deps"
+          git push

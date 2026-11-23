@@ -1,6 +1,0 @@
-{
-  "name": "PixForge — 高解析轉像素工坊",
-  "description": "純瀏覽器端的高解析 2D 圖片轉像素藝術工具，具備對比度感知輪廓強化、智慧降採樣、OKLab 色盤量化、自由非正方形裁切與無損匯出。",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
-}
