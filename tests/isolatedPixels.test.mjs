@@ -157,11 +157,34 @@ test('opaque speck is cleared only with enough transparent neighbors', () => {
   assert.deepEqual(pixel(removeIsolatedPixels(six, 5, 5, 'light'), 5, 2, 2), center);
 });
 
-test('local luminance extreme guard runs before a possible transparent cleanup', () => {
+test('luminance extreme guard applies below the alpha-erasure threshold', () => {
+  const input = neighborhood(RGBA(245), [
+    ...Array(5).fill(RGBA(0, 0, 0, 0)), RGBA(35), RGBA(40), RGBA(45),
+  ]);
+  for (const mode of ['light', 'strong']) {
+    assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, mode), 5, 2, 2), RGBA(245));
+  }
+});
+
+test('a bright stray pixel with seven transparent neighbors and one dark neighbor is erased in both modes', () => {
+  const input = make(5, 5, RGBA(0, 0, 0, 0));
+  put(input, 5, 2, 2, RGBA(245, 240, 210));
+  put(input, 5, 3, 2, RGBA(35, 28, 25));
+  const snapshot = new Uint8ClampedArray(input);
+
+  for (const mode of ['light', 'strong']) {
+    const result = removeIsolatedPixels(input, 5, 5, mode);
+    assert.equal(pixel(result, 5, 2, 2)[3], 0, mode + ' should erase the bright speck');
+  }
+  assert.deepEqual(input, snapshot, 'cleanup cannot modify its source buffer');
+});
+
+test('at six transparent neighbors Strong erases the speck but Light retains the highlight', () => {
   const input = neighborhood(RGBA(245), [
     ...Array(6).fill(RGBA(0, 0, 0, 0)), RGBA(35), RGBA(40),
   ]);
-  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2), RGBA(245));
+  assert.deepEqual(pixel(removeIsolatedPixels(input, 5, 5, 'light'), 5, 2, 2), RGBA(245));
+  assert.equal(pixel(removeIsolatedPixels(input, 5, 5, 'strong'), 5, 2, 2)[3], 0);
 });
 
 test('snapshot prevents a 3-vote group becoming 4 votes during left-to-right processing', () => {

@@ -144,10 +144,15 @@ export function removeIsolatedPixels(
       // Any matching neighbor means this pixel is part of a connected feature.
       if (hasSameColorNeighbor) continue;
 
-      // A highlight or a dark accent that lies outside the local luminance
-      // range is meaningful even in Strong mode. No opaque neighbors means
-      // there is no valid luminance range to check.
-      if (centerAlpha !== 0 && darkestOpaque !== Infinity) {
+      // A highlight or dark accent that lies outside the local luminance
+      // range is meaningful even in Strong mode. But if enough neighbors are
+      // transparent to erase an opaque speck (7 in Light, 6 in Strong),
+      // do not let one remaining dark/bright neighbor block that cleanup.
+      if (
+        centerAlpha !== 0 &&
+        darkestOpaque !== Infinity &&
+        transparentCount < rules.minAlphaAgreement
+      ) {
         const lightness = labL[center];
         if (
           lightness >= brightestOpaque + LOCAL_EXTREME_L_MARGIN ||
