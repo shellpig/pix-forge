@@ -1,5 +1,6 @@
 import { RGBColor, rgbToOklab } from './palettes';
 import { exportPixelPngBlob, extractAutoPaletteFromBuffers } from './pixelEngine';
+import { getSpriteSheetLayout } from './spriteSheetLayout';
 
 /**
  * Export multiple frames arranged into a crisp nearest-neighbor Sprite Sheet PNG Blob.
@@ -14,15 +15,20 @@ export function exportSpriteSheetPngBlob(
 
     const frameW = frames[0].width;
     const frameH = frames[0].height;
-    const cols = Math.max(1, Math.min(frames.length, Math.round(columns)));
-    const rows = Math.ceil(frames.length / cols);
+    const layout = getSpriteSheetLayout(frameW, frameH, frames.length, scale, columns);
+    if (!layout.isWithinLimits) {
+      return reject(new Error(layout.errorMessage || 'Sprite Sheet 輸出尺寸超過安全限制。'));
+    }
+    if (frames.some((frame) => frame.width !== frameW || frame.height !== frameH)) {
+      return reject(new Error('Sprite Sheet 所有影格的像素尺寸必須一致。'));
+    }
 
-    const cellW = frameW * scale;
-    const cellH = frameH * scale;
+    const { columns: cols, cellWidth: cellW, cellHeight: cellH } = layout;
 
+    // Validate BEFORE creating a potentially oversized canvas.
     const sheetCanvas = document.createElement('canvas');
-    sheetCanvas.width = cellW * cols;
-    sheetCanvas.height = cellH * rows;
+    sheetCanvas.width = layout.width;
+    sheetCanvas.height = layout.height;
     const sheetCtx = sheetCanvas.getContext('2d');
     if (!sheetCtx) return reject(new Error('無法建立 Sprite Sheet 畫布'));
     sheetCtx.imageSmoothingEnabled = false;
