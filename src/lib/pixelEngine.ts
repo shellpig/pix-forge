@@ -7,6 +7,9 @@ import {
   rgbToHex,
   rgbToOklab,
 } from './palettes';
+import { getEffectiveIsolatedPixelMode, removeIsolatedPixels, type IsolatedPixelMode } from './isolatedPixels';
+
+export type { IsolatedPixelMode } from './isolatedPixels';
 
 export type DownscaleMode = 'clean-sprite' | 'pixeloe' | 'k-centroid' | 'area';
 export type PaletteMode = 'full' | 'auto' | 'preset';
@@ -34,6 +37,7 @@ export interface PixelEngineConfig {
   presetPaletteId: string;
   ditherMode: DitherMode;
   ditherStrength: number; // 0..100
+  isolatedPixelMode: IsolatedPixelMode; // off / light / strong (after quantization)
   contrast: number; // -30..50
   saturation: number; // -50..60
   alphaThreshold: number; // 0..255
@@ -62,6 +66,7 @@ export const DEFAULT_ENGINE_CONFIG: PixelEngineConfig = {
   presetPaletteId: 'endesga32',
   ditherMode: 'none',
   ditherStrength: 40,
+  isolatedPixelMode: 'light',
   contrast: 6,
   saturation: 12,
   alphaThreshold: 128,
@@ -900,8 +905,12 @@ export function processWorkingBuffer(
     quantizeWithPalette(pixelBytes, targetW, targetH, presetRgb, config.ditherMode, config.ditherStrength);
   }
 
-  const { swatches, totalUnique } = collectUsedPalette(pixelBytes);
-  return { data: pixelBytes, palette: swatches, uniqueColorCount: totalUnique };
+  // Final pass: remove true isolated pixels after optional palette quantization.
+  const finalPixels = removeIsolatedPixels(
+    pixelBytes, targetW, targetH, getEffectiveIsolatedPixelMode(config)
+  );
+  const { swatches, totalUnique } = collectUsedPalette(finalPixels);
+  return { data: finalPixels, palette: swatches, uniqueColorCount: totalUnique };
 }
 
 /**
@@ -1072,9 +1081,15 @@ export function runBatchPixelConversion(
     }
   }
 
+  // Run cleanup only after every frame has been quantized. It also works in
+  // full-color mode (which intentionally skips quantization and dithering).
+  const cleanupMode = getEffectiveIsolatedPixelMode(config);
+  const finalBuffers = preQuantBuffers.map((buf) =>
+    removeIsolatedPixels(buf, targetW, targetH, cleanupMode)
+  );
   const totalMs = Math.round(performance.now() - t0);
 
-  return preQuantBuffers.map((buf) => {
+  return finalBuffers.map((buf) => {
     const outImageData = new ImageData(new Uint8ClampedArray(buf), targetW, targetH);
     const { swatches, totalUnique } = collectUsedPalette(outImageData.data);
     return {

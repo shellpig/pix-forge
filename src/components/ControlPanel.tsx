@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { PRESET_PALETTES } from '../lib/palettes';
 import { getSpriteSheetLayout } from '../lib/spriteSheetLayout';
+import { isCleanupDisabledByDither } from '../lib/isolatedPixels';
 import {
   DitherMode,
+  IsolatedPixelMode,
   DownscaleMode,
   PaletteMode,
   PixelEngineConfig,
@@ -114,6 +116,7 @@ export function ControlPanel({
 }: ControlPanelProps) {
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
   const [copiedImg, setCopiedImg] = useState<boolean>(false);
+  const cleanupDisabledByDither = isCleanupDisabledByDither(config);
 
   const handleWidthInput = (raw: string) => {
     const val = parseInt(raw, 10);
@@ -557,6 +560,44 @@ export function ControlPanel({
               )}
             </div>
           )}
+
+          {/* Post-quantization cleanup, disabled while actual dithering is active. */}
+          <div className="space-y-1.5 pt-2 border-t border-[#252B39]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-[#CBD5E1]">雜點清除（後處理）</span>
+              <div role="group" aria-label="孤立像素清除強度" className="flex items-center gap-0.5 rounded p-0.5 bg-[#161A23] border border-[#252B39]">
+                {([
+                  ['off', '關'],
+                  ['light', '輕'],
+                  ['strong', '強'],
+                ] as Array<[IsolatedPixelMode, string]>).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={cleanupDisabledByDither}
+                    aria-pressed={config.isolatedPixelMode === mode}
+                    onClick={() => onUpdateConfig({ isolatedPixelMode: mode })}
+                    className={`px-2.5 py-1 text-[11px] rounded transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                      config.isolatedPixelMode === mode
+                        ? 'bg-[#262E40] text-sky-300 font-medium'
+                        : 'text-[#94A3B8] hover:text-[#E2E8F0]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] leading-relaxed text-[#8B95A8]">
+              {cleanupDisabledByDither
+                ? '已啟用抖色：雜點清除會抹掉刻意交錯的像素，因此暫時停用；關閉抖色後恢復原選擇。'
+                : config.isolatedPixelMode === 'light'
+                  ? '僅清除周圍 8 格至少 7 格同色、且中心顏色接近的單點；保護高對比眼睛高光。'
+                  : config.isolatedPixelMode === 'strong'
+                    ? '周圍 8 格至少 6 格同色就清除；可能移除刻意設計的單點高光。'
+                    : '關閉孤立像素清除，保留原本的量化輸出。'}
+            </p>
+          </div>
 
           {result && result.palette.length > 0 && (
             <div className="pt-1">

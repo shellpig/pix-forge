@@ -11,7 +11,7 @@ PixForge is a **React + TypeScript + Vite** application for converting ordinary 
 - **Downsampling styles:** Clean Sprite (color clustering), LAB Separation, K-Centroid Sharp, and Soft Area downscaling.
 - **Size and crop:** Custom 8–256 pixel dimensions, common presets, rectangular output, and interactive cropping.
 - **Image controls:** Smoothing, outline preservation, pre-sharpening, contrast, saturation, and alpha threshold.
-- **Color controls:** Auto-extracted 4–64 color palettes, classic presets, or original colors, with optional Bayer 4×4 or Floyd–Steinberg dithering.
+- **Color controls:** Auto-extracted 4–64 color palettes, classic presets, or original colors; optional Bayer 4×4 or Floyd–Steinberg dithering; isolated-pixel cleanup (Off / Light / Strong, Light by default).
 - **Comparison and editing:** Side-by-side, split comparison, pixel-only view, grid, zoom, pencil, eraser, eyedropper, fill, magic wand, and undo/redo.
 - **Animation workflow:** Multi-file upload with natural filename sorting, add/delete/reorder frames, optional shared Oklab palette, and 1–30 FPS playback.
 - **Export formats:** PNG, Sprite Sheet PNG, looping GIF, and ZIP of individual PNG frames at 1×, 4×, 8×, or 16× scale.
@@ -67,6 +67,8 @@ Open the keyboard icon in the toolbar for in-app help.
 ## Sprite Sheet and Performance Notes
 
 Sprite Sheets use an **approximately square grid** by default (columns ≈ `Math.ceil(Math.sqrt(frameCount))`), with manual column and single-row options. Before allocating a Canvas, PixForge applies conservative export limits of **16,384 pixels per side** and **16,000,000 total pixels**. Reduce the scale or adjust columns if an export exceeds them. Actual browser limits may be lower.
+
+Isolated-pixel cleanup runs after palette quantization, including support for isolated opaque specks and transparent pinholes. Light mode protects high-contrast highlights; Strong mode can erase intentional single-pixel highlights. Bayer/Floyd dithering temporarily disables cleanup, and your previous setting returns when dithering is turned off.
 
 Larger images, more frames, and higher export scales use more memory. Batch processing prefers a browser Web Worker, with a main-thread fallback.
 
