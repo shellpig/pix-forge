@@ -670,224 +670,189 @@ export function CanvasViewport({
         onChange={handleFileChange}
       />
 
-      {/* Contextual Workspace Toolbar */}
-      <div className="px-3.5 py-2 border-b border-[#222733] bg-[#0F1218] flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5">
+      {/* Compact single-row toolbar: horizontally scrolls on narrow viewports
+          instead of wrapping into additional rows and shrinking the canvas. */}
+      <div className="shrink-0 border-b border-[#222733] bg-[#0F1218]">
+        <div className="flex items-center gap-2 px-3 py-1.5 overflow-x-auto studio-scroll whitespace-nowrap">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            title="可選取單張圖片，或一次多選多張連續圖自動建立動畫序列"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            title="上傳單張圖片，或一次選取多張圖片建立新動畫"
+            className="inline-flex shrink-0 items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5 text-sky-400" />
-            上傳圖片 / 多張動畫
+            上傳圖片
           </button>
 
-          <div className="h-4 w-px bg-[#262B38] mx-0.5" aria-hidden="true" />
-
-          <div className="flex items-center gap-1">
-            {samples.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => onSelectSample(s)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeSampleId === s.id
-                    ? 'bg-[#222836] text-sky-300 font-medium'
-                    : 'text-[#94A3B8] hover:text-[#E2E8F0] hover:bg-[#171B24]'
-                }`}
-              >
-                {s.label}
-              </button>
+          <select
+            aria-label="載入內建範例圖片"
+            title="選取範例圖片（會取代目前影格）"
+            value={activeSampleId ?? ''}
+            onChange={(e) => {
+              const sample = samples.find((item) => item.id === e.target.value);
+              if (sample) onSelectSample(sample);
+            }}
+            className="shrink-0 max-w-[156px] py-1 px-1.5 text-[11px] bg-[#161A23] border border-[#2D3546] text-[#CBD5E1] rounded cursor-pointer"
+          >
+            <option value="">選擇範例</option>
+            {samples.map((sample) => (
+              <option key={sample.id} value={sample.id}>{sample.label}</option>
             ))}
-          </div>
-        </div>
+          </select>
 
-        {/* Right Canvas Controls: Batch Status, Grid, Backdrop, Zoom */}
-        <div className="flex flex-wrap items-center gap-2">
-          {isBatchProcessing && (
-            <span className="text-xs text-sky-300 font-mono tabular-nums whitespace-nowrap">
-              批次轉換中…
-            </span>
+          {viewMode === 'animate' && (
+            <>
+              <div className="h-4 w-px shrink-0 bg-[#262B38]" aria-hidden="true" />
+
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  disabled={timelineFrames.length < 2}
+                  onClick={() => onStepFrame(-1)}
+                  title="上一格 (←)"
+                  aria-label="上一格"
+                  className="p-1 border border-[#262C3B] bg-[#161A23] hover:bg-[#232B3C] text-[#CBD5E1] disabled:opacity-35 rounded cursor-pointer"
+                >
+                  <SkipBack className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  disabled={timelineFrames.length < 2}
+                  onClick={onTogglePlay}
+                  title={isPlaying ? '暫停播放 (Space)' : '開始播放 (Space)'}
+                  className={'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded disabled:opacity-40 cursor-pointer ' + (isPlaying
+                    ? 'bg-amber-400 hover:bg-amber-300 text-[#0B0D11]'
+                    : 'bg-sky-400 hover:bg-sky-300 text-[#081018]')}
+                >
+                  {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                  {isPlaying ? '暫停' : '播放'}
+                </button>
+                <button
+                  type="button"
+                  disabled={timelineFrames.length < 2}
+                  onClick={() => onStepFrame(1)}
+                  title="下一格 (→)"
+                  aria-label="下一格"
+                  className="p-1 border border-[#262C3B] bg-[#161A23] hover:bg-[#232B3C] text-[#CBD5E1] disabled:opacity-35 rounded cursor-pointer"
+                >
+                  <SkipForward className="w-3 h-3" />
+                </button>
+              </div>
+
+              <span className="shrink-0 px-0.5 text-[11px] font-mono tabular-nums text-sky-300">
+                {String(Math.max(1, activeFrameIdx + 1)).padStart(2, '0')}/{String(timelineFrames.length).padStart(2, '0')}
+              </span>
+
+              <div className="flex shrink-0 items-center gap-0.5 p-0.5 border border-[#262C3B] bg-[#0D1017] rounded">
+                {FPS_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => onChangeFps(preset)}
+                    title={preset + ' FPS'}
+                    className={'px-1.5 py-0.5 text-[11px] font-mono rounded cursor-pointer ' + (fps === preset
+                      ? 'bg-[#262E40] text-sky-300 font-medium'
+                      : 'text-[#94A3B8] hover:text-white')}
+                  >
+                    {preset}
+                  </button>
+                ))}
+                <label className="inline-flex items-center gap-1 pl-1.5 border-l border-[#262C3B] text-[10px] text-[#94A3B8]">
+                  <span>FPS</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={fps}
+                    aria-label="自訂播放速度（1 至 30 FPS）"
+                    onChange={(e) => {
+                      if (e.target.value !== '') {
+                        onChangeFps(Math.max(1, Math.min(30, Number(e.target.value))));
+                      }
+                    }}
+                    className="w-10 bg-transparent text-center text-[11px] font-mono text-sky-300 outline-none"
+                  />
+                </label>
+              </div>
+
+              {activeFrameId && (
+                <button
+                  type="button"
+                  onClick={() => onEditFrame(activeFrameId)}
+                  title="進入目前影格的像素精修"
+                  className="inline-flex shrink-0 items-center gap-1 px-2 py-1 border border-[#2D3546] bg-[#1A202D] hover:bg-[#232B3C] rounded text-[11px] text-[#E2E8F0] cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3 text-sky-400" />
+                  精修
+                </button>
+              )}
+            </>
           )}
 
-          {sourceImage && result && !isBatchProcessing && (
-            <div className="hidden 2xl:flex items-center gap-2 text-xs text-[#94A3B8] font-mono tabular-nums whitespace-nowrap mr-1">
-              <span className="max-w-[120px] truncate text-[#CBD5E1] font-sans">{sourceName}</span>
-              <span aria-hidden="true">·</span>
-              <span className="text-sky-300">
-                {result.width}×{result.height}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>{result.uniqueColorCount} 色</span>
-            </div>
+          {isBatchProcessing && (
+            <span className="shrink-0 text-[11px] text-sky-300">批次轉換中…</span>
           )}
 
           {viewMode !== 'crop' && (
             <>
+              <div className="h-4 w-px shrink-0 bg-[#262B38] ml-auto" aria-hidden="true" />
               <button
                 type="button"
-                onClick={() => setShowGrid((g) => !g)}
+                onClick={() => setShowGrid((value) => !value)}
                 title="顯示或隱藏像素格線（含 8×8 區塊輔助線）"
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  showGrid
-                    ? 'bg-sky-500/20 border-sky-400 text-sky-200'
-                    : 'bg-[#161A23] border-[#2D3546] text-[#CBD5E1] hover:border-sky-400/50 hover:text-white'
-                }`}
+                className={'inline-flex shrink-0 items-center gap-1 px-2 py-1 text-[11px] rounded border cursor-pointer ' + (showGrid
+                  ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                  : 'bg-[#161A23] border-[#2D3546] text-[#CBD5E1] hover:border-sky-400/50')}
               >
-                <Grid3X3 className="w-3.5 h-3.5" />
-                {showGrid ? '格線：開' : '格線：關'}
+                <Grid3X3 className="w-3 h-3" />
+                {showGrid ? '格線開' : '格線關'}
               </button>
 
-              <div className="flex items-center bg-[#161A23] border border-[#262B38] rounded-md p-0.5">
-                {(['checker', 'dark', 'light'] as BackdropMode[]).map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => setBackdrop(b)}
-                    className={`px-2 py-1 text-[11px] rounded transition-colors whitespace-nowrap cursor-pointer ${
-                      backdrop === b
-                        ? 'bg-[#262C3B] text-[#F1F5F9] font-medium'
-                        : 'text-[#8B95A8] hover:text-[#CBD5E1]'
-                    }`}
-                  >
-                    {b === 'checker' ? '棋盤' : b === 'dark' ? '黑底' : '白底'}
-                  </button>
-                ))}
-              </div>
+              <select
+                aria-label="畫布背景色"
+                title="切換棋盤、黑底或白底"
+                value={backdrop}
+                onChange={(e) => setBackdrop(e.target.value as BackdropMode)}
+                className="shrink-0 px-1.5 py-1 border border-[#2D3546] bg-[#161A23] text-[11px] text-[#CBD5E1] rounded cursor-pointer"
+              >
+                <option value="checker">棋盤</option>
+                <option value="dark">黑底</option>
+                <option value="light">白底</option>
+              </select>
 
-              <div className="flex items-center gap-1 bg-[#161A23] border border-[#262B38] rounded-md px-1 py-0.5">
+              <div className="flex shrink-0 items-center gap-1 px-1 py-0.5 border border-[#262B38] bg-[#161A23] rounded">
                 <button
                   type="button"
                   onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-                  className="p-1 text-[#94A3B8] hover:text-[#F1F5F9] transition-colors cursor-pointer"
+                  title="縮小"
                   aria-label="縮小"
+                  className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
                 >
-                  <ZoomOut className="w-3.5 h-3.5" />
+                  <ZoomOut className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setZoom(1)}
-                  className="px-1.5 text-xs font-mono tabular-nums text-[#CBD5E1] hover:text-sky-300 transition-colors cursor-pointer"
                   title="重設為符合視窗"
+                  className="px-1 text-[11px] font-mono tabular-nums text-[#CBD5E1] hover:text-sky-300 cursor-pointer"
                 >
                   {Math.round(zoom * 100)}%
                 </button>
                 <button
                   type="button"
                   onClick={() => setZoom((z) => Math.min(6, +(z + 0.25).toFixed(2)))}
-                  className="p-1 text-[#94A3B8] hover:text-[#F1F5F9] transition-colors cursor-pointer"
+                  title="放大"
                   aria-label="放大"
+                  className="p-0.5 text-[#94A3B8] hover:text-[#F1F5F9] cursor-pointer"
                 >
-                  <ZoomIn className="w-3.5 h-3.5" />
+                  <ZoomIn className="w-3 h-3" />
                 </button>
               </div>
             </>
           )}
         </div>
       </div>
-
-      {/* Animation Playback Bar (visible in Animate Mode) */}
-      {viewMode === 'animate' && (
-        <div className="px-3.5 py-2 border-b border-[#222733] bg-[#131722] flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Transport Controls */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={timelineFrames.length < 2}
-                onClick={() => onStepFrame(-1)}
-                title="上一格 (←)"
-                className="p-1.5 bg-[#0D1017] hover:bg-[#1C2230] border border-[#262C3B] disabled:opacity-35 rounded text-[#CBD5E1] hover:text-white transition-colors cursor-pointer"
-              >
-                <SkipBack className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={timelineFrames.length < 2}
-                onClick={onTogglePlay}
-                title={isPlaying ? '暫停播放 (Space)' : '開始循環播放 (Space)'}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap disabled:opacity-40 cursor-pointer ${
-                  isPlaying
-                    ? 'bg-amber-400 hover:bg-amber-300 text-[#0B0D11]'
-                    : 'bg-sky-400 hover:bg-sky-300 text-[#081018]'
-                }`}
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {isPlaying ? '暫停' : '播放'}
-              </button>
-
-              <button
-                type="button"
-                disabled={timelineFrames.length < 2}
-                onClick={() => onStepFrame(1)}
-                title="下一格 (→)"
-                className="p-1.5 bg-[#0D1017] hover:bg-[#1C2230] border border-[#262C3B] disabled:opacity-35 rounded text-[#CBD5E1] hover:text-white transition-colors cursor-pointer"
-              >
-                <SkipForward className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <span className="text-xs font-mono tabular-nums text-[#CBD5E1] px-1">
-              影格{' '}
-              <strong className="text-sky-300">
-                {activeFrameIdx >= 0 ? String(activeFrameIdx + 1).padStart(2, '0') : '01'}
-              </strong>{' '}
-              / {String(timelineFrames.length).padStart(2, '0')}
-            </span>
-
-            <div className="h-4 w-px bg-[#262B38]" aria-hidden="true" />
-
-            {/* Custom FPS Slider + Presets */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 px-2.5 py-1 bg-[#0D1017] border border-[#262C3B] rounded-md">
-                <span className="text-[11px] text-[#94A3B8] whitespace-nowrap">播放速度</span>
-                <input
-                  type="range"
-                  min={1}
-                  max={30}
-                  step={1}
-                  value={fps}
-                  onChange={(e) => onChangeFps(Number(e.target.value))}
-                  className="w-24 studio-slider"
-                />
-                <span className="text-xs font-mono tabular-nums text-sky-300 w-12 text-right whitespace-nowrap">
-                  {fps} FPS
-                </span>
-              </div>
-
-              <div className="flex items-center bg-[#0D1017] border border-[#262C3B] rounded-md p-0.5">
-                {FPS_PRESETS.map((presetFps) => (
-                  <button
-                    key={presetFps}
-                    type="button"
-                    onClick={() => onChangeFps(presetFps)}
-                    className={`px-2 py-1 text-[11px] font-mono tabular-nums rounded transition-colors cursor-pointer ${
-                      fps === presetFps
-                        ? 'bg-[#262E40] text-sky-300 font-medium'
-                        : 'text-[#8B95A8] hover:text-[#E2E8F0]'
-                    }`}
-                  >
-                    {presetFps}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {activeFrameId && (
-            <button
-              type="button"
-              onClick={() => onEditFrame(activeFrameId)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#E2E8F0] bg-[#1A202D] hover:bg-[#232B3C] border border-[#2D3546] rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Pencil className="w-3.5 h-3.5 text-sky-400" />
-              精修目前影格
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Phase 2 Pixel Editor Bar (visible in Edit Mode) */}
       {viewMode === 'edit' && sourceImage && result && (
