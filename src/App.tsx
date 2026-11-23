@@ -21,6 +21,10 @@ import {
   exportSpriteSheetPngBlob,
 } from './lib/animationExport';
 
+type BatchWorkerReply =
+  | { type: 'success'; results: PixelEngineResult[] }
+  | { type: 'error'; message: string };
+
 interface AnimationFrameItem {
   id: string;
   name: string;
@@ -173,44 +177,113 @@ export default function App() {
     [frames]
   );
 
-  // Run batch pixel conversion whenever source frames or config changes
+  // Debounce slider changes, and run the complete batch conversion inside a
+  // module Worker so heavy multi-frame processing never blocks React painting.
   useEffect(() => {
     const currentFrames = framesRef.current;
-    if (currentFrames.length === 0) return;
+    if (currentFrames.length === 0) {
+      setIsBatchProcessing(false);
+      return;
+    }
 
     let cancelled = false;
+    let worker: Worker | null = null;
+    let paintRaf = 0;
+    let computeRaf = 0;
     setIsBatchProcessing(currentFrames.length > 1);
 
-    const rafId = window.requestAnimationFrame(() => {
+    const applyResults = (results: PixelEngineResult[]) => {
       if (cancelled) return;
-      try {
-        const imgs = currentFrames.map((f) => f.sourceImage);
-        const results = runBatchPixelConversion(imgs, config);
-        if (cancelled) return;
+      const resultById = new Map<string, PixelEngineResult>();
+      currentFrames.forEach((frame, idx) => {
+        if (results[idx]) resultById.set(frame.id, results[idx]);
+      });
+      setFrames((prev) =>
+        prev.map((frame) => {
+          const result = resultById.get(frame.id);
+          return result ? { ...frame, convertedResult: result } : frame;
+        })
+      );
+      setErrorMsg(null);
+      setIsBatchProcessing(false);
+    };
 
-        setFrames((prev) => {
-          const resultById = new Map<string, PixelEngineResult>();
-          currentFrames.forEach((f, idx) => {
-            if (results[idx]) resultById.set(f.id, results[idx]);
-          });
-          return prev.map((f) => {
-            const r = resultById.get(f.id);
-            return r ? { ...f, convertedResult: r } : f;
-          });
+    const reportError = (err: unknown) => {
+      if (cancelled) return;
+      setErrorMsg(err instanceof Error ? err.message : String(err || '批次轉換運算發生錯誤'));
+      setIsBatchProcessing(false);
+    };
+
+    // Older browsers without OffscreenCanvas/Workers retain a functional
+    // fallback. Two rAFs permit a real paint of the busy indicator first.
+    const runFallback = () => {
+      paintRaf = window.requestAnimationFrame(() => {
+        computeRaf = window.requestAnimationFrame(() => {
+          if (cancelled) return;
+          try {
+            applyResults(runBatchPixelConversion(currentFrames.map((f) => f.sourceImage), config));
+          } catch (err) {
+            reportError(err);
+          }
         });
-        setErrorMsg(null);
-      } catch (err) {
-        if (!cancelled) {
-          setErrorMsg(err instanceof Error ? err.message : '批次轉換運算發生錯誤');
-        }
-      } finally {
-        if (!cancelled) setIsBatchProcessing(false);
+      });
+    };
+
+    const timerId = window.setTimeout(async () => {
+      if (cancelled) return;
+      if (
+        typeof Worker === 'undefined' ||
+        typeof createImageBitmap !== 'function' ||
+        typeof OffscreenCanvas === 'undefined'
+      ) {
+        runFallback();
+        return;
       }
-    });
+
+      let bitmaps: ImageBitmap[] = [];
+      try {
+        // Decoding to transferable bitmaps is asynchronous; the Worker owns
+        // them after postMessage, and closes them once conversion completes.
+        bitmaps = await Promise.all(currentFrames.map((f) => createImageBitmap(f.sourceImage)));
+        if (cancelled) {
+          bitmaps.forEach((bitmap) => bitmap.close());
+          return;
+        }
+
+        worker = new Worker(new URL('./workers/pixelConversion.worker.ts', import.meta.url), {
+          type: 'module',
+        });
+        worker.onmessage = ({ data }: MessageEvent<BatchWorkerReply>) => {
+          if (cancelled) return;
+          worker?.terminate();
+          worker = null;
+          if (data.type === 'success') applyResults(data.results);
+          else reportError(data.message);
+        };
+        worker.onerror = (event) => {
+          if (cancelled) return;
+          event.preventDefault();
+          worker?.terminate();
+          worker = null;
+          runFallback();
+        };
+        worker.postMessage({ config, images: bitmaps }, bitmaps);
+      } catch {
+        // No worker support or bitmap decode failure: use the original
+        // conversion pipeline, but only after the pending paint.
+        bitmaps.forEach((bitmap) => bitmap.close());
+        worker?.terminate();
+        worker = null;
+        if (!cancelled) runFallback();
+      }
+    }, 200);
 
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+      window.cancelAnimationFrame(paintRaf);
+      window.cancelAnimationFrame(computeRaf);
+      worker?.terminate(); // Discard stale jobs when sliders or frames change.
     };
   }, [sourceKey, config]);
 
