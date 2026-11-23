@@ -221,6 +221,7 @@ export function CanvasViewport({
   const editCanvasBoxRef = useRef<HTMLDivElement | null>(null);
   const pixelCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sourceCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cropPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual1xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const actual2xCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -432,6 +433,27 @@ export function CanvasViewport({
       ctx.drawImage(sourceImage, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
     }
   }, [sourceImage, config.crop, viewMode]);
+
+  useEffect(() => {
+    const canvas = cropPreviewCanvasRef.current;
+    if (!canvas || !sourceImage || viewMode !== 'crop') return;
+
+    const nw = Math.max(1, sourceImage.naturalWidth);
+    const nh = Math.max(1, sourceImage.naturalHeight);
+    const maxEdge = 1024;
+    const scale = Math.min(1, maxEdge / Math.max(nw, nh));
+    canvas.width = Math.max(1, Math.round(nw * scale));
+    canvas.height = Math.max(1, Math.round(nh * scale));
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const isSmallSprite = nw <= 256 && nh <= 256;
+      ctx.imageSmoothingEnabled = !isSmallSprite;
+      if (!isSmallSprite) ctx.imageSmoothingQuality = 'high';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+    }
+  }, [sourceImage, viewMode]);
 
   useEffect(() => {
     if (!isDraggingSplit) return;
@@ -709,6 +731,20 @@ export function CanvasViewport({
 
   const dispW = Math.round(baseDispW * zoom);
   const dispH = Math.round(baseDispH * zoom);
+
+  const cropPreviewSize = (() => {
+    if (!sourceImage) return { w: 320, h: 320 };
+    const maxW = Math.max(160, Math.min(availW, 760));
+    const maxH = Math.max(160, Math.min(availH - 56, 560));
+    const ratio = sourceImage.naturalWidth / Math.max(1, sourceImage.naturalHeight);
+    let w = maxW;
+    let h = w / ratio;
+    if (h > maxH) {
+      h = maxH;
+      w = h * ratio;
+    }
+    return { w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) };
+  })();
 
   const backdropClass =
     backdrop === 'checker'
@@ -1080,16 +1116,16 @@ export function CanvasViewport({
               ref={cropBoxRef}
               className="relative inline-block border border-[#2D3546] shadow-2xl overflow-hidden bg-checkerboard"
               style={{
-                maxWidth: Math.min(availW, 760),
-                maxHeight: Math.min(availH - 48, 600),
+                width: cropPreviewSize.w,
+                height: cropPreviewSize.h,
               }}
             >
-              <img
-                src={sourceImage.src}
-                alt="原圖裁切檢視"
-                draggable={false}
-                className="block max-w-full max-h-[55vh] object-contain select-none"
-                referrerPolicy="no-referrer"
+              <canvas
+                ref={cropPreviewCanvasRef}
+                aria-label="原圖裁切檢視"
+                className={`block w-full h-full select-none ${
+                  sourceImage.naturalWidth <= 256 && sourceImage.naturalHeight <= 256 ? 'pixelated' : ''
+                }`}
               />
 
               <div

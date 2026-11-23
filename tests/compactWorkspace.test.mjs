@@ -56,3 +56,8 @@ test('removes duplicate top-right download button and enables wheel zoom overflo
   assert.match(viewport, /addEventListener\('wheel', handleWheel, \{ passive: false \}\)/);
   assert.match(viewport, /className="m-auto shrink-0"/);
 });
+
+test('crop preview draws decoded sourceImage onto canvas instead of reusing revoked blob src', () => {
+  assert.doesNotMatch(viewport, /src=\{sourceImage\.src\}/);
+  assert.match(viewport, /ref=\{cropPreviewCanvasRef\}/);
+});
