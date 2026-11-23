@@ -66,22 +66,25 @@ const BUILTIN_SAMPLES: Array<{
   id: string;
   labelKey: TranslationKey;
   src: string;
+  legacySrc: string;
   defaultW: number;
   defaultH: number;
 }> = [
   {
     id: 'rpg-knight',
-    labelKey: 'sample.rpgKnight',
-    src: '/src/assets/images/sample_rpg_knight_1795397004570.jpg',
+    labelKey: 'sample.catKnight',
+    src: '/src/assets/images/sample-cat-knight.png',
+    legacySrc: '/src/assets/images/sample_rpg_knight_1795397004570.jpg',
     defaultW: 64,
     defaultH: 64,
   },
   {
     id: 'fantasy-tavern',
-    labelKey: 'sample.fantasyTavern',
-    src: '/src/assets/images/sample_fantasy_tavern_1795397003478.jpg',
-    defaultW: 96,
-    defaultH: 72,
+    labelKey: 'sample.forestCottage',
+    src: '/src/assets/images/sample-forest-cottage.png',
+    legacySrc: '/src/assets/images/sample_fantasy_tavern_1795397003478.jpg',
+    defaultW: 128,
+    defaultH: 96,
   },
 ];
 
@@ -388,6 +391,11 @@ export default function App() {
     setHasPendingReconvert(false);
   }, [activeFrame]);
 
+  const getSampleFileName = useCallback((sample: (typeof BUILTIN_SAMPLES)[number]) => {
+    const label = tRef.current(sample.labelKey).replace(tRef.current('sample.prefix'), '');
+    return `${label}${sample.src.slice(sample.src.lastIndexOf('.'))}`;
+  }, []);
+
   // Load built-in single sample
   const loadSample = useCallback(
     async (sample: (typeof BUILTIN_SAMPLES)[number], canApply?: () => boolean) => {
@@ -405,7 +413,7 @@ export default function App() {
         setFrames([
           {
             id,
-            name: `${tRef.current(sample.labelKey).replace(tRef.current('sample.prefix'), '')}.jpg`,
+            name: getSampleFileName(sample),
             sourceImage: img,
             sampleSrc: sample.src,
             convertedResult: null,
@@ -429,7 +437,7 @@ export default function App() {
         }
       }
     },
-    [clearUndoStacks]
+    [clearUndoStacks, getSampleFileName]
   );
 
   // Initial load: restore previous workspace from IndexedDB, or fall back to built-in sample
@@ -447,6 +455,7 @@ export default function App() {
             saved.frames.map(async (pf): Promise<AnimationFrameItem | null> => {
               try {
                 let img: HTMLImageElement;
+                let { name, sampleSrc } = pf;
                 if (pf.sourceBlob) {
                   const url = URL.createObjectURL(pf.sourceBlob);
                   try {
@@ -454,8 +463,13 @@ export default function App() {
                   } finally {
                     URL.revokeObjectURL(url);
                   }
-                } else if (pf.sampleSrc) {
-                  img = await loadHtmlImageFromUrl(pf.sampleSrc);
+                } else if (sampleSrc) {
+                  const replacement = BUILTIN_SAMPLES.find((sample) => sample.legacySrc === sampleSrc);
+                  if (replacement) {
+                    sampleSrc = replacement.src;
+                    name = getSampleFileName(replacement);
+                  }
+                  img = await loadHtmlImageFromUrl(sampleSrc);
                 } else {
                   return null;
                 }
@@ -463,10 +477,10 @@ export default function App() {
                 const manualImg = deserializeManualEdit(pf.manualEdit);
                 return {
                   id: pf.id,
-                  name: pf.name,
+                  name,
                   sourceImage: img,
                   sourceBlob: pf.sourceBlob,
-                  sampleSrc: pf.sampleSrc,
+                  sampleSrc,
                   convertedResult: null,
                   editHistory: manualImg ? [cloneImageData(manualImg), manualImg] : [],
                   historyIndex: manualImg ? 1 : -1,
@@ -513,7 +527,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [loadSample, clearUndoStacks]);
+  }, [loadSample, clearUndoStacks, getSampleFileName]);
 
   // Auto-save current workspace (images, manual edits, settings) to IndexedDB
   // Playback advances the active frame without restarting the save timer.

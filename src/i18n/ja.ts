@@ -15,8 +15,8 @@ export const ja: TranslationDict = {
   'tab.animate': 'アニメ再生',
 
   // Built-in Samples
-  'sample.rpgKnight': 'サンプル：騎士立ち絵 (1:1)',
-  'sample.fantasyTavern': 'サンプル：錬金小屋 (4:3)',
+  'sample.catKnight': 'サンプル：猫の騎士 (64×64)',
+  'sample.forestCottage': 'サンプル：森の小屋 (128×96)',
   'sample.prefix': 'サンプル：',
   'sample.clipboardName': 'clipboard.png',
 

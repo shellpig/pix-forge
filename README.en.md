@@ -108,4 +108,11 @@ Thanks to the researchers and open-source authors who share their work:
 
 ## License
 
-This repository currently **does not include a `LICENSE` file**. Crediting upstream projects does not grant PixForge their licenses. Add a project license before releasing it as open source. Bugs and suggestions are welcome via GitHub Issues.
+The PixForge source code is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`).
+
+The project maintainer generated the bundled sample images below. Their use and redistribution are subject to the applicable rights and terms for the images. The AGPL license covers the PixForge source code.
+
+- Cat Knight (64×64 by default) `src/assets/images/sample-cat-knight.png`
+- Forest Cottage (128×96 by default) `src/assets/images/sample-forest-cottage.png`
+
+Bugs and suggestions are welcome via GitHub Issues.

@@ -15,8 +15,8 @@ export const en: TranslationDict = {
   'tab.animate': 'Animate',
 
   // Built-in Samples
-  'sample.rpgKnight': 'Sample: Knight Portrait (1:1)',
-  'sample.fantasyTavern': 'Sample: Alchemy Hut (4:3)',
+  'sample.catKnight': 'Sample: Cat Knight (64×64)',
+  'sample.forestCottage': 'Sample: Forest Cottage (128×96)',
   'sample.prefix': 'Sample: ',
   'sample.clipboardName': 'clipboard.png',
 

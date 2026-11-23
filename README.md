@@ -106,4 +106,11 @@ npx --no-install wrangler deploy
 
 ## 授權
 
-目前 Repository **尚未附上 `LICENSE` 檔案**。引用或致謝其他專案並不代表本專案自動採用相同授權；如計畫公開開源，應先選擇並加入授權文件。問題與建議可透過 GitHub Issues 提出。
+PixForge 原始碼依 [GNU Affero General Public License v3.0](LICENSE) 授權（`AGPL-3.0-only`）。
+
+以下內建範例圖片由專案維護者自行生成。圖片的使用及散布依各自適用的權利與條款，AGPL 授權範圍限於 PixForge 原始碼。
+
+- 貓咪騎士（預設輸出 64×64）`src/assets/images/sample-cat-knight.png`
+- 森林小屋（預設輸出 128×96）`src/assets/images/sample-forest-cottage.png`
+
+問題與建議可透過 GitHub Issues 提出。

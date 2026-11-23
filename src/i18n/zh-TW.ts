@@ -13,8 +13,8 @@ export const zhTW = {
   'tab.animate': '動畫播放',
 
   // Built-in Samples
-  'sample.rpgKnight': '範例：騎士立繪 (1:1)',
-  'sample.fantasyTavern': '範例：煉金小屋 (4:3)',
+  'sample.catKnight': '範例：貓咪騎士 (64×64)',
+  'sample.forestCottage': '範例：森林小屋 (128×96)',
   'sample.prefix': '範例：',
   'sample.clipboardName': '剪貼簿圖片.png',
 
