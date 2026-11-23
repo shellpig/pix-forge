@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
-    "test": "node --test tests/frameHistory.test.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
