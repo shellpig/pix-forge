@@ -92,3 +92,18 @@ test('output palette retains one-click brush selection and clipboard copy', () =
   assert.match(panel, /const handleCopyHex[\s\S]*?navigator\.clipboard\?\.writeText\(hex\)[\s\S]*?onPickColor\(hex\)/);
   assert.match(panel, /<DocumentPalette/);
 });
+
+test('advanced palette modes and brush share the custom color picker without removing quick swatches', () => {
+  const panel = readFileSync('src/components/ControlPanel.tsx', 'utf8');
+  const document = readFileSync('src/components/DocumentPalette.tsx', 'utf8');
+  const brush = readFileSync('src/components/PixelEditorBar.tsx', 'utf8');
+  assert.match(document, /<ColorPicker/);
+  assert.match(brush, /<ColorPicker/);
+  assert.match(brush, /palette\.slice\(0, 32\)\.map/);
+  for (const mode of ['single', 'manual', 'auto']) assert.ok(document.includes("id:'" + mode + "'"));
+  assert.match(app, /onApplyColors=\{handleApplyDocumentColors\}/);
+  assert.match(panel, /onApplyColors=\{onApplyColors\}/);
+  assert.match(document, /onApplyColors\(mapping\)/);
+  assert.match(document, /onPreviewColors\(next\)/);
+  assert.match(document, /onCancelPreview\(\)/);
+});
