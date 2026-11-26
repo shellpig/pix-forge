@@ -19,9 +19,9 @@ await build({
     emptyOutDir: false,
     minify: false,
     lib: {
-      entry: resolve('src/lib/frameHistory.ts'),
+      entry: { frameHistory: resolve('src/lib/frameHistory.ts'), documentPalette: resolve('src/lib/documentPalette.ts') },
       formats: ['es'],
-      fileName: () => 'frameHistory.mjs',
+      fileName: (_format, name) => name + '.mjs',
     },
   },
 });
@@ -30,6 +30,8 @@ const {
   applyFrameConversion,
   getEffectiveFrameImageData,
 } = await import(pathToFileURL(join(testDist, 'frameHistory.mjs')).href);
+
+const { createDocumentColorPreview } = await import(pathToFileURL(join(testDist, 'documentPalette.mjs')).href);
 
 class TestImageData {
   constructor(data, width, height) {
@@ -106,4 +108,28 @@ test('no manual edits means conversion has no synthetic undo history', () => {
   assert.equal(frame.historyIndex, -1);
   assert.deepEqual(frame.editHistory, []);
   assert.equal(getEffectiveFrameImageData(frame).data[0], 50);
+});
+
+test('palette previews do not add history; applying a multi-color mapping adds one reversible entry', () => {
+  const baseline = new ImageData(new Uint8ClampedArray([255,0,0,255, 0,255,0,128]), 2, 1);
+  let frame = {
+    convertedResult: { imageData: baseline, width: 2, height: 1, palette: [], uniqueColorCount: 2, computeMs: 1 },
+    editHistory: [],
+    historyIndex: -1,
+  };
+  const mapping = new Map([['#ff0000','#0000ff'],['#00ff00','#0000ff']]);
+  for (let i = 0; i < 25; i++) {
+    const preview = createDocumentColorPreview(getEffectiveFrameImageData(frame).data, mapping);
+    assert.equal(preview.changed, 2);
+    assert.equal(frame.historyIndex, -1);
+    assert.equal(frame.editHistory.length, 0);
+    assert.deepEqual([...baseline.data], [255,0,0,255, 0,255,0,128]);
+  }
+  const next = createDocumentColorPreview(getEffectiveFrameImageData(frame).data, mapping);
+  frame = appendFrameEdit(frame, new ImageData(next.data, 2, 1), 40);
+  assert.equal(frame.historyIndex, 1);
+  assert.equal(frame.editHistory.length, 2);
+  assert.deepEqual([...getEffectiveFrameImageData(frame).data], [0,0,255,255, 0,0,255,128]);
+  assert.deepEqual([...getEffectiveFrameImageData({ ...frame, historyIndex: 0 }).data], [255,0,0,255, 0,255,0,128]);
+  assert.deepEqual([...getEffectiveFrameImageData({ ...frame, historyIndex: 1 }).data], [0,0,255,255, 0,0,255,128]);
 });
