@@ -117,8 +117,17 @@ function prepareForEdit<T extends JournalFrame>(journal: HistoryJournal<T>, ids:
   let next=dropped.journal;
   let retired=dropped.retired;
   const batches=batchEntries(next.undo);
-  const participants=new Set(batches.flatMap(e=>e.changes.map(c=>c.frameId)));
-  const frameCap=next.frames.some(f=>ids.has(f.id)&&participants.has(f.id)&&f.historyIndex>=limits.maxHistory-1);
+  const frameCap=next.frames.some(f=>{
+    if(!ids.has(f.id)) return false;
+    // appendFrameEdit preserves index 0 and removes the oldest manual slots.
+    const removed=Math.max(0,f.historyIndex+2-Math.max(2,limits.maxHistory));
+    if(!removed) return false;
+    return batches.some(e=>e.changes.some(c=>{
+      if(c.frameId!==f.id) return false;
+      const index=batchBoundary(f,c);
+      return index<1 || index<=removed || (!c.beforeIsBaseline && index-1<=removed);
+    }));
+  });
   const journalCap=next.undo.slice(0,Math.max(0,next.undo.length-limits.maxHistory+1)).some(e=>e.type==='batch-pixel-edit');
   if(batches.length&&(frameCap||journalCap||batchHistoryBytes(next)+extraBytes>limits.maxBatchBytes)) {
     const sealed=retireBatchHistory(next,true,false);
