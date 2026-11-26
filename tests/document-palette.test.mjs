@@ -1,11 +1,12 @@
 import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import ts from 'typescript';
-const source = readFileSync(new URL('../src/lib/documentPalette.ts', import.meta.url), 'utf8');
-const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { collectDocumentColors, normalizeDocumentHex, replaceDocumentColor } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
+import { execFileSync } from 'node:child_process';
 
+// Run the TypeScript module via Node 22's built-in type stripping, without compiler APIs.
+test('document palette operations', () => {
+  const moduleUrl = new URL('../src/lib/documentPalette.ts', import.meta.url).href;
+  const script = `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+const { collectDocumentColors, normalizeDocumentHex, replaceDocumentColor } = await import(${JSON.stringify(moduleUrl)});
 test('normalizes complete HEX values only', () => {
   assert.equal(normalizeDocumentHex(' FFD997 '), '#ffd997');
   assert.equal(normalizeDocumentHex('#ff0'), null);
@@ -25,4 +26,7 @@ test('document palette includes all colors beyond quick-palette limit', () => {
   const data = new Uint8ClampedArray(100*4);
   for(let i=0;i<100;i++) {data[i*4]=i;data[i*4+3]=255;}
   assert.equal(collectDocumentColors(data).length, 100);
+});
+`;
+  execFileSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script], { stdio: 'pipe' });
 });
