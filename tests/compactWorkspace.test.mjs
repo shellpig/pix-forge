@@ -68,3 +68,27 @@ test('frame deletion shows nearby confirmation popover with skip option and supp
   assert.match(app, /type: 'delete-frame'/);
   assert.match(app, /handleGlobalUndo/);
 });
+
+test('palette preview is separate from committed editing, persistence and export', () => {
+  const previewStart = app.indexOf('const handlePreviewDocumentColors =');
+  const applyStart = app.indexOf('const handleApplyDocumentColors =');
+  const replaceStart = app.indexOf('const handleReplaceDocumentColor =');
+  assert.ok(previewStart >= 0 && previewStart < applyStart && applyStart < replaceStart);
+  const preview = app.slice(previewStart, applyStart);
+  const apply = app.slice(applyStart, replaceStart);
+  assert.match(preview, /createDocumentColorPreview\(activeResult\.imageData\.data, mapping\)/);
+  assert.doesNotMatch(preview, /handleCommitImageData|setFrames\(/);
+  assert.equal((apply.match(/handleCommitImageData\(/g) || []).length, 1);
+  assert.match(app, /<CanvasViewport[\s\S]*?result=\{activeResult\}[\s\S]*?previewImageData=\{previewImageData\}/);
+  assert.match(viewport, /syncCanvasesWithImageData\(previewImageData \?\? result\.imageData\)/);
+  assert.match(viewport, /if \(!result \|\| previewImageData\) return;/);
+  assert.match(app, /exportPixelPngBlob\(activeResult\.imageData, exportScale\)/);
+  assert.match(app, /getEffectiveFrameImageData\(f\)/);
+});
+
+test('output palette retains one-click brush selection and clipboard copy', () => {
+  const panel = readFileSync('src/components/ControlPanel.tsx', 'utf8');
+  assert.match(panel, /onClick=\{\(\) => handleCopyHex\(hex\)\}/);
+  assert.match(panel, /const handleCopyHex[\s\S]*?navigator\.clipboard\?\.writeText\(hex\)[\s\S]*?onPickColor\(hex\)/);
+  assert.match(panel, /<DocumentPalette/);
+});
