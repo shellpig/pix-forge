@@ -17,6 +17,7 @@ export interface PresetPalette {
 }
 
 export const PRESET_PALETTES: PresetPalette[] = [
+  { id: 'black-white', name: 'Black & White (2)', colors: ['#000000', '#ffffff'] },
   {
     id: 'endesga32',
     name: 'Endesga 32',
