@@ -311,3 +311,13 @@ test('stacked narrow workspace preserves a canvas stage and avoids a floating pr
   assert.match(doc,/querySelector\('\[data-color-picker-layout\] input:not\(\[type="range"\]\)'\)\?\.scrollIntoView/);
   assert.match(css,/@media \(pointer: coarse\) \{\s*\.color-picker-channel input\[type="range"\]\.studio-slider \{\s*height: 24px/);
 });
+
+test('browser palette checks target the edit bitmap, not the grid overlay',()=>{
+  const script=readFileSync('scripts/browser-palette-check.mjs','utf8');
+  assert.equal((viewport.match(/data-testid="pixel-edit-bitmap"/g)||[]).length,1);
+  assert.match(viewport,/<canvas ref=\{pixelCanvasRef\} data-testid="pixel-edit-bitmap"/);
+  assert.match(script,/const canvasSelector='\[data-testid="pixel-edit-bitmap"\]'/);
+  assert.equal((script.match(/document\.querySelector\('\[data-testid="pixel-edit-bitmap"\]'\)/g)||[]).length,2);
+  assert.doesNotMatch(script,/\[data-testid="pixel-edit-canvas"\] canvas/);
+  assert.match(readFileSync('.gitignore','utf8'),/^browser-artifacts\/$/m);
+});
