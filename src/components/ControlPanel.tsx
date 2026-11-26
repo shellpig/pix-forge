@@ -49,6 +49,7 @@ interface ControlPanelProps {
   activeFrameId: string | null;
   paletteEditingDisabled: boolean;
   palettePreviewActive: boolean;
+  paletteDraftResetVersion: number;
   palettePreviewDisabled: boolean;
   onPreviewColors: (mapping: ReadonlyMap<string, string>) => void;
   onCancelPreview: () => void;
@@ -110,6 +111,7 @@ export function ControlPanel({
   activeFrameId,
   paletteEditingDisabled,
   palettePreviewActive,
+  paletteDraftResetVersion,
   palettePreviewDisabled,
   onPreviewColors,
   onCancelPreview,
@@ -631,6 +633,7 @@ export function ControlPanel({
               imageData={result.imageData}
               disabled={paletteEditingDisabled}
               previewActive={palettePreviewActive}
+              draftResetVersion={paletteDraftResetVersion}
               previewDisabled={palettePreviewDisabled}
               onPreviewColors={onPreviewColors}
               onCancelPreview={onCancelPreview}
