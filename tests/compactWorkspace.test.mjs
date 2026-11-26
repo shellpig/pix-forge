@@ -269,3 +269,31 @@ test('toolbar direct replace starts single-source picking with current scope; na
   assert.match(panel,/if \(paletteNavigationRequest.kind === 'reveal'\) target.scrollIntoView/);
   assert.match(panel,/target.focus\(\{preventScroll:true\}\)/);
 });
+
+test('compact color picker is opt-in for the brush and falls back to vertical in narrow containers',()=>{
+  const picker=readFileSync('src/components/ColorPicker.tsx','utf8');
+  const bar=readFileSync('src/components/PixelEditorBar.tsx','utf8');
+  const doc=readFileSync('src/components/DocumentPalette.tsx','utf8');
+  const css=readFileSync('src/index.css','utf8');
+  assert.match(picker,/layout\?: 'vertical' \| 'compact'/);
+  assert.match(picker,/layout = 'vertical'/);
+  assert.match(bar,/<ColorPicker layout="compact" value=\{brushDraft\} onChange=\{changeBrush\}/);
+  assert.match(doc,/<ColorPicker key=\{mode\} value=\{draft\} onChange=\{updateDraft\}/);
+  assert.doesNotMatch(doc,/layout="compact"/);
+  assert.match(bar,/brush-color-picker self-start w-full max-w-\[44rem\] min-w-0/);
+  assert.match(css,/container: brush-color-picker \/ inline-size/);
+  assert.match(css,/@container brush-color-picker \(min-width: 30rem\)/);
+  assert.match(css,/\[data-color-picker-layout="compact"\] \.color-picker-content \{\s*grid-template-columns: minmax\(0, 2fr\) minmax\(0, 3fr\)/);
+  assert.match(css,/\.color-picker-channel input \{\s*grid-column: 2;\s*grid-row: 1;/);
+  assert.match(picker,/color-picker-content grid gap-2 min-w-0/);
+  assert.match(picker,/color-picker-controls grid gap-2 min-w-0/);
+  assert.match(picker,/color-picker-channels grid gap-2 min-w-0/);
+  assert.match(picker,/navigator.clipboard.writeText\(hex\)/);
+  assert.match(picker,/onChange\(rgbToHex\(next.r,next.g,next.b\)\)/);
+  assert.match(picker,/onChange\(nextHex\)/);
+  assert.match(picker,/aria-invalid=\{!hex\}/);
+  assert.match(picker,/disabled=\{disabled \|\| !hex\}/);
+  assert.match(picker,/e.key==='Enter' && onEnter/);
+  assert.match(bar,/onEnter=\{\(\)=>\{if\(normalizeDocumentHex\(brushDraft\)\)setPickerOpen\(false\);\}\}/);
+  assert.match(bar,/palette\.slice\(0, 32\)\.map/);
+});
