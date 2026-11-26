@@ -56,7 +56,7 @@ export function DocumentPalette({ imageData, disabled, canUndo, canRedo, onRepla
     setOverrides(new Map());
     setTolerance(0);
     setCopyStatus(null);
-    setDraft(prev=>mode==='single' && selected.length===1 && colorSet.has(selected[0]) ? selected[0] : '');
+    setDraft(()=>mode==='single' && selected.length===1 && colorSet.has(selected[0]) ? selected[0] : '');
   }
 
   const activeSelected = selected.filter(c=>colorSet.has(c));
@@ -198,10 +198,10 @@ export function DocumentPalette({ imageData, disabled, canUndo, canRedo, onRepla
             <span className="text-[#94A3B8]">{t('documentPalette.source')}</span>
             <span className="w-5 h-5 rounded border border-white/20" style={{backgroundColor:source}}/>
             <span className="font-mono select-all">{source}</span>
-            <button type="button" title={t('documentPalette.copy')} aria-label={t('documentPalette.copy')} onClick={copy} className="ml-auto p-1 hover:text-sky-300">{copyStatus?.hex===source && copyStatus.ok?<Check size={14}/>:<Copy size={14}/>}</button>
+            <button type="button" title={t('documentPalette.copy')} aria-label={t('documentPalette.copy')} onClick={copy} className="ml-auto p-1 hover:text-sky-300">{copyStatus && copyStatus.hex===source && copyStatus.ok?<Check size={14}/>:<Copy size={14}/>}</button>
             <button type="button" title={t('documentPalette.brush')} aria-label={t('documentPalette.brush')} disabled={disabled} onClick={()=>onPickColor(source)} className="p-1 hover:text-sky-300 disabled:opacity-30"><Pipette size={14}/></button>
           </div>}
-          {source && copyStatus?.hex===source && <p role="status" className="text-[11px] text-[#94A3B8]">{t(copyStatus.ok?'documentPalette.copied':'documentPalette.failed')}</p>}
+          {source && copyStatus && copyStatus.hex===source && <p role="status" className="text-[11px] text-[#94A3B8]">{t(copyStatus.ok?'documentPalette.copied':'documentPalette.failed')}</p>}
           <p className="text-xs text-[#CBD5E1]">{t('documentPalette.target')}</p>
           <ColorPicker key={mode} value={draft} onChange={updateDraft} onEnter={apply} disabled={disabled}/>
           <button type="button" disabled={disabled} aria-pressed={chooseTarget} onClick={()=>setChooseTarget(v=>!v)} className={secondary+(chooseTarget?' ring-1 ring-sky-400':'')}>{t('documentPalette.existing')}</button>
