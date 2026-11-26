@@ -49,6 +49,8 @@ interface CanvasViewportProps {
   sourceImage: HTMLImageElement | null;
   sourceName: string;
   result: PixelEngineResult | null;
+  previewImageData: ImageData | null;
+  onCancelPalettePreview: () => void;
   config: PixelEngineConfig;
   viewMode: ViewMode;
   editor: PixelEditorState;
@@ -185,6 +187,8 @@ export function CanvasViewport({
   sourceImage,
   sourceName,
   result,
+  previewImageData,
+  onCancelPalettePreview,
   config,
   viewMode,
   editor,
@@ -457,8 +461,8 @@ export function CanvasViewport({
 
   useEffect(() => {
     if (!result) return;
-    syncCanvasesWithImageData(result.imageData);
-  }, [result, viewMode, showRealSize]);
+    syncCanvasesWithImageData(previewImageData ?? result.imageData);
+  }, [result, previewImageData, viewMode, showRealSize]);
 
   useEffect(() => {
     const canvas = sourceCropCanvasRef.current;
@@ -658,7 +662,7 @@ export function CanvasViewport({
       setHoverPixel(null);
       return;
     }
-    const img = strokeActiveRef.current.active && workingImgRef.current ? workingImgRef.current : result.imageData;
+    const img = strokeActiveRef.current.active && workingImgRef.current ? workingImgRef.current : (previewImageData ?? result.imageData);
     const px = getPixelAt(img, coords.x, coords.y);
     if (!px || px.a === 0) {
       setHoverPixel({ x: coords.x, y: coords.y, hex: null, isTransparent: true });
@@ -673,7 +677,7 @@ export function CanvasViewport({
   };
 
   const handleEditPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!result) return;
+    if (!result || previewImageData) return;
     if (e.button !== 0 && e.button !== 2) return;
     e.preventDefault();
 
@@ -1052,6 +1056,15 @@ export function CanvasViewport({
           onAutoRemoveBg={onAutoRemoveBg}
           onResetEdits={onResetEdits}
         />
+      )}
+
+      {previewImageData && (
+        <div role="status" className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
+          <span>{t('documentPalette.previewNotice')}</span>
+          <button type="button" onClick={onCancelPalettePreview} className="px-2.5 py-1 bg-[#161A23] border border-[#2D3546] rounded hover:text-sky-300">
+            {t('documentPalette.cancelPreview')}
+          </button>
+        </div>
       )}
 
       {/* Pending Reconversion Protection Notice */}
