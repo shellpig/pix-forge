@@ -5,6 +5,20 @@ export interface FrameHistoryState {
   convertedResult: PixelEngineResult | null;
   editHistory: ImageData[];
   historyIndex: number;
+  /** Lowest reachable history position after an atomic batch is retired. */
+  historyFloor?: number;
+}
+
+export function getHistoryFloor(frame: FrameHistoryState): number {
+  return Math.max(0, Math.min(frame.historyFloor ?? 0, frame.editHistory.length - 1, frame.historyIndex));
+}
+
+export function canUndoFrame(frame: FrameHistoryState): boolean {
+  return frame.historyIndex > getHistoryFloor(frame);
+}
+
+export function canRedoFrame(frame: FrameHistoryState): boolean {
+  return frame.historyIndex >= 0 && frame.historyIndex < frame.editHistory.length - 1;
 }
 
 /**
@@ -70,5 +84,6 @@ export function appendFrameEdit<T extends FrameHistoryState>(
     ...frame,
     editHistory: trimmed,
     historyIndex: trimmed.length - 1,
+    historyFloor: getHistoryFloor(frame) > 0 ? 1 : undefined,
   };
 }
