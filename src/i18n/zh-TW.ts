@@ -146,7 +146,11 @@ export const zhTW = {
   'editor.redoTitle': '重做 (Ctrl+Y)',
   'editor.resetEdits': '還原自動轉換 ({count})',
   'editor.resetEditsTitle': '清除所有手動畫筆與去背紀錄，回到自動轉換結果',
-  'editor.quickPalette': '快速取色',
+  'editor.quickPalette': "畫筆快速取色",
+  'editor.batchReplace': "整批換色",
+  'editor.batchReplaceTitle': "從畫布選取來源色，替換目前範圍內所有相同顏色的像素",
+  'editor.documentPaletteShortcut': "前往文件色盤",
+  'editor.documentPaletteShortcutTitle': "前往文件色盤，不改變目前選色或預覽",
   'editor.pickColorTitle': '選取畫筆顏色 {hex}',
 
   // Frame Timeline Bar
