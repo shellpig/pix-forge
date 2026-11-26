@@ -22,7 +22,7 @@ export const ja: TranslationDict = {
   'sample.clipboardName': 'clipboard.png',
 
   // App Errors
-  'error.imageLoad': '画像の読み込みに失敗しました',
+
   'error.sampleLoad': 'サンプル画像の読み込みに失敗しました。',
   'error.uploadRead': '一部の画像を読み込めませんでした。PNG / JPG / WebP 形式をご使用ください。',
   'error.batchConvert': '一括変換処理でエラーが発生しました',
