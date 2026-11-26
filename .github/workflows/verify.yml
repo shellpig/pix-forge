@@ -9,12 +9,14 @@ on:
       - feat/document-palette-phase-3b
       - feat/document-palette-phase-4a
       - feat/document-palette-phase-4b
+      - feat/document-palette-phase-4c
   pull_request:
     branches:
       - main
       - feat/document-palette-phase-2b
       - feat/document-palette-phase-3a
       - feat/document-palette-phase-4a
+      - feat/document-palette-phase-4b
   workflow_dispatch:
 
 permissions:
