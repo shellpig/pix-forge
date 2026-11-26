@@ -107,3 +107,83 @@ test('advanced palette modes and brush share the custom color picker without rem
   assert.match(document, /onPreviewColors\(next\)/);
   assert.match(document, /onCancelPreview\(\)/);
 });
+
+test('preview cancellation consumes undo and redo before modifying either history stack', () => {
+  for (const name of ['handleUndo', 'handleRedo', 'handleGlobalUndo', 'handleGlobalRedo']) {
+    const start = app.indexOf('const '+name+' = useCallback(');
+    assert.ok(start >= 0);
+    const body = app.slice(start, app.indexOf('\n  }, [', start));
+    assert.match(body, /=> \{\s*if \(dismissPalettePreview\(\)\) return(?: true)?;/);
+  }
+  const start = app.indexOf('const dismissPalettePreview =');
+  const body = app.slice(start, app.indexOf('}, [previewImageData]);', start));
+  assert.match(body, /if \(!previewImageData\) return false;/);
+  assert.match(body, /setPalettePreview\(null\)/);
+  assert.match(body, /setPaletteDraftResetVersion\(version => version \+ 1\)/);
+  assert.doesNotMatch(body, /setFrames\(|undoStackRef|redoStackRef|handleCommitImageData/);
+  assert.match(app, /onCancelPalettePreview=\{dismissPalettePreview\}/);
+  assert.match(app, /paletteDraftResetVersion=\{paletteDraftResetVersion\}/);
+  const panel = readFileSync('src/components/ControlPanel.tsx', 'utf8');
+  const document = readFileSync('src/components/DocumentPalette.tsx', 'utf8');
+  assert.match(panel, /draftResetVersion=\{paletteDraftResetVersion\}/);
+  const reset = document.slice(document.indexOf('if (lastDraftResetVersion !== draftResetVersion)'), document.indexOf('else if (lastImage !== imageData)'));
+  for (const action of ['setSelected([])', "setDraft('')", 'setChooseTarget(false)', 'setTolerance(0)', 'setOverrides(new Map())']) {
+    assert.ok(reset.includes(action), 'missing draft reset: ' + action);
+  }
+});
+
+test('preview keyboard cancellation consumes first Ctrl+Z, ignores held-key repeats, and Escape leaves committed history alone', () => {
+  // Exercise the actual shortcut handler's history/preview section with isolated
+  // state and synthetic keyboard events, not a duplicate implementation.
+  const start = app.indexOf('const onKeyDown = (e: KeyboardEvent) => {');
+  const end = app.indexOf("if (viewMode === 'animate'", start);
+  assert.ok(start >= 0 && end > start);
+  const code = app.slice(start, end)
+    .replace('(e: KeyboardEvent)', '(e)')
+    .replace('e.target as HTMLElement | null', 'e.target') + '}; return onKeyDown;';
+  const ref = {current:false};
+  let preview = true;
+  let committedColors = 30;
+  let undo = 0, redo = 0, cancels = 0;
+  const dismiss = () => {
+    if (!preview) return false;
+    preview = false;
+    cancels++;
+    return true;
+  };
+  class FakeInput { constructor(type) { this.tagName='INPUT'; this.type=type; } }
+  const handler = new Function('dismissPalettePreview', 'previewShortcutConsumedRef', 'handleGlobalUndo', 'handleGlobalRedo', 'HTMLInputElement', code)(
+    dismiss, ref, () => { undo++; committedColors=32; return true; },
+    () => { redo++; committedColors=30; return true; }, FakeInput
+  );
+  const press = (key, extras={}) => {
+    const event = {key, ctrlKey:false, metaKey:false, shiftKey:false, repeat:false, isComposing:false,
+      target:null, prevented:false, preventDefault(){this.prevented=true;}, ...extras};
+    handler(event);
+    return event.prevented;
+  };
+  assert.equal(press('z',{ctrlKey:true,target:new FakeInput('range')}),true);
+  assert.equal(preview,false);
+  assert.equal(committedColors,30);
+  assert.equal(undo,0);
+  assert.equal(cancels,1);
+  assert.equal(press('z',{ctrlKey:true,repeat:true}),true);
+  assert.equal(undo,0);
+  assert.equal(press('z',{ctrlKey:true,target:new FakeInput('range')}),true);
+  assert.equal(undo,1);
+  assert.equal(committedColors,32);
+  assert.equal(press('y',{ctrlKey:true}),true);
+  assert.equal(redo,1);
+  assert.equal(committedColors,30);
+  preview=true;
+  assert.equal(press('Escape',{target:new FakeInput('text')}),true);
+  assert.equal(cancels,2);
+  assert.equal(committedColors,30);
+  assert.equal(undo,1);
+  assert.equal(press('z',{ctrlKey:true,target:new FakeInput('text')}),false);
+  assert.equal(undo,1); // native text undo outside preview
+  preview=true;
+  assert.equal(press('z',{metaKey:true,shiftKey:true}),true);
+  assert.equal(redo,1);
+  assert.equal(cancels,3);
+});
