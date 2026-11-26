@@ -30,8 +30,9 @@ import {
 import {
   commitSinglePixelEdit, commitSequenceColors, moveFramePixelHistory,
   movePixelEntry, retireBatchHistory, canMoveFramePixelHistory,
-  MAX_PIXEL_HISTORY, type HistoryEntry, type HistoryJournal,
+  MAX_PIXEL_HISTORY, getBatchBlockReason, type HistoryEntry, type HistoryJournal, type BatchBlockReason,
 } from './lib/batchHistory';
+import { collectSequencePalette, getSequenceMappingStats, previewSequenceFrame, equalPaletteMappings, type PaletteScope } from './lib/sequencePalette';
 import {
   exportAnimatedGifBlob,
   exportFramesZipBlob,
@@ -72,6 +73,13 @@ interface PalettePreviewSession {
   viewMode: ViewMode;
   pendingReconvert: boolean;
   imageData: ImageData;
+}
+
+interface SequencePreviewSession {
+  frames: AnimationFrameItem[];
+  config: PixelEngineConfig;
+  viewMode: ViewMode;
+  mapping: ReadonlyMap<string,string>;
 }
 
 type UndoActionEntry = HistoryEntry<AnimationFrameItem>;
@@ -154,6 +162,9 @@ export default function App() {
   const [conversionFailed, setConversionFailed] = useState(false);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [palettePreview, setPalettePreview] = useState<PalettePreviewSession | null>(null);
+  const [sequencePreview, setSequencePreview] = useState<SequencePreviewSession | null>(null);
+  const [requestedPaletteScope, setRequestedPaletteScope] = useState<PaletteScope>('frame');
+  const paletteScope = frames.length > 1 ? requestedPaletteScope : 'frame';
   const [paletteDraftResetVersion, setPaletteDraftResetVersion] = useState(0);
   const previewShortcutConsumedRef = useRef(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -259,7 +270,16 @@ export default function App() {
 
   // Only the canvas may read this ephemeral preview. All edits, exports, palette
   // statistics, timeline thumbnails and persistence continue using committed frames.
-  const previewImageData =
+  const sequenceBlockReason = getBatchBlockReason(frames, {
+    isPlaying, isConversionPending: isConversionPending || conversionFailed,
+    isBatchProcessing, hasPendingReconvert, hasPreview: false,
+  });
+  const sequencePalette = useMemo(() => paletteScope === 'sequence' ? collectSequencePalette(frames) : null, [paletteScope, frames]);
+  const validSequencePreview = sequencePreview && paletteScope === 'sequence' &&
+    sequencePreview.frames === frames && sequencePreview.config === config &&
+    sequencePreview.viewMode === viewMode && viewMode !== 'crop' && !sequenceBlockReason
+      ? sequencePreview : null;
+  const singlePreviewImageData =
     palettePreview &&
     palettePreview.frame === activeFrame &&
     palettePreview.config === config &&
@@ -269,19 +289,38 @@ export default function App() {
     !isPlaying && !isConversionPending && !isBatchProcessing
       ? palettePreview.imageData
       : null;
+  const previewImageData = useMemo(() => validSequencePreview && activeFrame
+    ? previewSequenceFrame(activeFrame, validSequencePreview.mapping)
+    : singlePreviewImageData, [validSequencePreview, activeFrame, singlePreviewImageData]);
 
   useEffect(() => {
-    if (palettePreview && !previewImageData) setPalettePreview(null);
-  }, [palettePreview, previewImageData]);
+    if ((palettePreview && !singlePreviewImageData) || (sequencePreview && !validSequencePreview)) {
+      setPalettePreview(null);
+      setSequencePreview(null);
+      setPaletteDraftResetVersion(version => version + 1);
+    }
+  }, [palettePreview, singlePreviewImageData, sequencePreview, validSequencePreview]);
+  useEffect(() => {
+    if (frames.length < 2) setRequestedPaletteScope('frame');
+  }, [frames.length]);
 
   // Low-level cancellation is also used for no-op mappings and preview toggles.
-  const cancelPalettePreview = useCallback(() => setPalettePreview(null), []);
+  const cancelPalettePreview = useCallback(() => {
+    setPalettePreview(null);
+    setSequencePreview(null);
+  }, []);
+  const handleChangePaletteScope = useCallback((scope: PaletteScope) => {
+    cancelPalettePreview();
+    setPaletteDraftResetVersion(version => version + 1);
+    setRequestedPaletteScope(scope);
+  }, [cancelPalettePreview]);
 
   // Explicit cancellation discards the draft as well as its rendered preview.
   // Returning true consumes a history action without touching either stack.
   const dismissPalettePreview = useCallback((): boolean => {
     if (!previewImageData) return false;
     setPalettePreview(null);
+    setSequencePreview(null);
     setPaletteDraftResetVersion(version => version + 1);
     return true;
   }, [previewImageData]);
@@ -779,14 +818,14 @@ export default function App() {
   // Commit edited pixel frame onto the active frame's Undo/Redo stack
   const handleCommitImageData = useCallback(
     (next: ImageData) => {
-      if (!activeFrame || !activeFrame.convertedResult) return;
+      if (!activeFrame || !activeFrame.convertedResult || validSequencePreview) return;
       const committed = commitSinglePixelEdit(readHistoryJournal(), activeFrame.id, next);
       if (!committed) return;
       setPalettePreview(null);
       publishHistoryJournal(committed.journal);
       notifyBatchRetirement(committed.retired);
     },
-    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement]
+    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement, validSequencePreview]
   );
 
   // Every preview starts from the effective committed frame, never from an
@@ -831,20 +870,39 @@ export default function App() {
     [handleApplyDocumentColors]
   );
 
-  // Phase 03-B will expose this internal all-frame commit API in the palette
-  // UI. Phase 03-A intentionally adds no sequence editing controls.
+  // A sequence draft retains only a mapping; scrub paused frames to preview
+  // each on demand. No timeline thumbnail, export, or history uses the draft.
+  const handlePreviewSequenceColors = useCallback((mapping: ReadonlyMap<string,string>) => {
+    if (!sequencePalette || sequenceBlockReason || viewMode === 'crop' ||
+        getSequenceMappingStats(sequencePalette,mapping).changedPixels === 0) {
+      cancelPalettePreview();
+      return;
+    }
+    setPalettePreview(null);
+    setSequencePreview({frames, config, viewMode, mapping:new Map(mapping)});
+  }, [sequencePalette, sequenceBlockReason, viewMode, frames, config, cancelPalettePreview]);
+
   const handleApplySequenceColors = useCallback((mapping: ReadonlyMap<string, string>) => {
     const committed = commitSequenceColors(readHistoryJournal(), mapping, {
       isPlaying, isConversionPending: isConversionPending || conversionFailed,
-      isBatchProcessing, hasPendingReconvert, hasPreview: previewImageData !== null,
+      isBatchProcessing, hasPendingReconvert,
+      // Only this exact, still-current sequence draft can be explicitly applied.
+      hasPreview: previewImageData !== null && !(validSequencePreview &&
+        validSequencePreview.frames === framesRef.current && equalPaletteMappings(validSequencePreview.mapping,mapping)),
     }, globalThis.crypto?.randomUUID?.() ?? makeFrameId());
     if (committed.ok) {
+      cancelPalettePreview();
       publishHistoryJournal(committed.journal);
       notifyBatchRetirement(committed.retired);
     }
     return committed;
   }, [readHistoryJournal, isPlaying, isConversionPending, conversionFailed, isBatchProcessing,
-    hasPendingReconvert, previewImageData, publishHistoryJournal, notifyBatchRetirement]);
+    hasPendingReconvert, previewImageData, validSequencePreview, publishHistoryJournal, notifyBatchRetirement, cancelPalettePreview]);
+
+  const handleApplySequencePalette = useCallback((mapping: ReadonlyMap<string,string>): BatchBlockReason | null => {
+    const result = handleApplySequenceColors(mapping);
+    return result.ok ? null : result.reason;
+  }, [handleApplySequenceColors]);
 
   const handleUndo = useCallback(() => {
     if (dismissPalettePreview()) return;
@@ -935,13 +993,13 @@ export default function App() {
   }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal, sealBatchHistory]);
 
   const handleAutoRemoveBg = useCallback(() => {
-    if (!activeResult) return;
+    if (!activeResult || previewImageData) return;
     const next = cloneImageData(activeResult.imageData);
     const removed = autoRemoveCornerBackground(next, Math.max(12, editor.tolerance));
     if (removed > 0) {
       handleCommitImageData(next);
     }
-  }, [activeResult, editor.tolerance, handleCommitImageData]);
+  }, [activeResult, editor.tolerance, handleCommitImageData, previewImageData]);
 
   // Timeline actions
   const handleStepFrame = useCallback((delta: -1 | 1) => {
@@ -1366,6 +1424,7 @@ export default function App() {
           sourceName={activeFrame?.name ?? ''}
           result={activeResult}
           previewImageData={previewImageData}
+          sequencePreviewActive={Boolean(validSequencePreview)}
           onCancelPalettePreview={dismissPalettePreview}
           config={config}
           viewMode={viewMode}
@@ -1433,6 +1492,17 @@ export default function App() {
           onPickColor={handlePickColor}
           activeFrameId={activeFrame?.id ?? null}
           paletteEditingDisabled={isPlaying || isConversionPending || isBatchProcessing}
+           paletteScope={paletteScope}
+           onChangePaletteScope={handleChangePaletteScope}
+           sequencePalette={sequencePalette}
+           sequenceBlockReason={sequenceBlockReason}
+           sequenceFrameNames={frames.map((f,index)=>({id:f.id,name:f.name,index:index+1}))}
+           onPreviewSequenceColors={handlePreviewSequenceColors}
+           onApplySequenceColors={handleApplySequencePalette}
+           canUndoSequence={Boolean(previewImageData || undoStackRef.current.length || canUndoActive)}
+           canRedoSequence={Boolean(redoStackRef.current.length || canRedoActive)}
+           onUndoSequence={handleGlobalUndo}
+           onRedoSequence={handleGlobalRedo}
           palettePreviewActive={previewImageData !== null}
           paletteDraftResetVersion={paletteDraftResetVersion}
           palettePreviewDisabled={viewMode === 'crop'}
