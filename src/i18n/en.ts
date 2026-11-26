@@ -255,6 +255,12 @@ export const en: TranslationDict = {
   'sequencePalette.block.no-change': "No matching pixels need changing.",
   'sequencePalette.block.memory-budget': "This operation exceeds the 64 MiB batch history budget. Reduce the scope or resolution.",
 
+  'documentPalette.canvasPick': "Pick from canvas",
+  'documentPalette.canvasPickDone': "Done picking",
+  'documentPalette.canvasPickCancel': "Cancel picking",
+  'documentPalette.canvasPickManualHint': "Pick source colors on the canvas; switch frames in All frames mode. Finish to preview, or press Esc to cancel.",
+  'documentPalette.canvasPickSingleHint': "Click the source color to replace on the canvas. Esc cancels.",
+  'documentPalette.canvasPickShortHint': "Pick a source color without editing pixels.",
   'documentPalette.title': "Document palette",
   'documentPalette.hint': "Select a color to replace across the current frame",
   'documentPalette.source': "Source color",
