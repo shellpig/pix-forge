@@ -149,7 +149,11 @@ export const en: TranslationDict = {
   'editor.redoTitle': 'Redo (Ctrl+Y)',
   'editor.resetEdits': 'Reset ({count})',
   'editor.resetEditsTitle': 'Discard all manual edits and restore auto-converted result',
-  'editor.quickPalette': 'Palette',
+  'editor.quickPalette': "Brush quick colors",
+  'editor.batchReplace': "Replace color",
+  'editor.batchReplaceTitle': "Pick a source from the canvas and replace all matching pixels in the current scope",
+  'editor.documentPaletteShortcut': "Document palette",
+  'editor.documentPaletteShortcutTitle': "Go to the document palette without changing the current selection or preview",
   'editor.pickColorTitle': 'Select color {hex}',
 
   // Frame Timeline Bar
