@@ -216,3 +216,41 @@ test('120-frame batch uses a single transaction and can undo/redo every changed 
   assert.deepEqual(values(global(r.journal,'undo')),values(j));
   assert.deepEqual(values(global(global(r.journal,'undo'),'redo')),values(r.journal));
 });
+
+test('120 full-size 256x256 frames stay within the 64 MiB retained batch budget',()=>{
+  const w=256,h=256;
+  const frames=Array.from({length:120},(_,i)=>{
+    const data=new Uint8ClampedArray(w*h*4);
+    for(let p=0;p<data.length;p+=4){data[p]=10;data[p+3]=255;}
+    return {id:String(i),convertedResult:{imageData:new ImageData(data,w,h),width:w,height:h,palette:[hex(10)],uniqueColorCount:1,computeMs:0},editHistory:[],historyIndex:-1};
+  });
+  const initial=journal(...frames);
+  const r=commitSequenceColors(initial,mapping(10,30),ready,'full-size');
+  assert.equal(r.ok,true);
+  assert.equal(r.changedPixels,120*w*h);
+  assert.equal(r.transaction.bytes,60*1024*1024);
+  assert.equal(batchHistoryBytes(r.journal),60*1024*1024);
+  const undone=global(r.journal,'undo');
+  for(let i=0;i<frames.length;i++) assert.strictEqual(getEffectiveFrameImageData(undone.frames[i]),frames[i].convertedResult.imageData);
+  const redone=global(undone,'redo');
+  for(let i=0;i<frames.length;i++) assert.strictEqual(getEffectiveFrameImageData(redone.frames[i]),r.transaction.changes[i].after);
+});
+
+test('multiple batches interleave with per-frame edits and remain one-step transactions',()=>{
+  let j=apply(journal(frame('a',10),frame('b',10),frame('c',40)),10,20,'first').journal;
+  j=single(j,'a',30).journal;
+  const r=commitSequenceColors(j,new Map([[hex(20),hex(50)],[hex(30),hex(50)]]),ready,'second');
+  assert.equal(r.ok,true);
+  j=r.journal;
+  assert.deepEqual(values(j),[50,50,40]);
+  j=global(j,'undo');
+  assert.deepEqual(values(j),[30,20,40]);
+  j=global(j,'undo');
+  assert.deepEqual(values(j),[20,20,40]);
+  j=global(j,'undo');
+  assert.deepEqual(values(j),[10,10,40]);
+  j=global(j,'redo');
+  j=global(j,'redo');
+  j=global(j,'redo');
+  assert.deepEqual(values(j),[50,50,40]);
+});
