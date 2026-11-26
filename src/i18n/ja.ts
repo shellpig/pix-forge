@@ -148,7 +148,11 @@ export const ja: TranslationDict = {
   'editor.redoTitle': 'やり直す (Ctrl+Y)',
   'editor.resetEdits': '自動変換に戻す ({count})',
   'editor.resetEditsTitle': '手動修正をすべて破棄し、自動変換結果に戻す',
-  'editor.quickPalette': 'パレット',
+  'editor.quickPalette': "ブラシのクイック色選択",
+  'editor.batchReplace': "一括色置換",
+  'editor.batchReplaceTitle': "キャンバスの元の色を選択し、現在の範囲内の同じ色のピクセルを置換します",
+  'editor.documentPaletteShortcut': "ドキュメントパレットへ",
+  'editor.documentPaletteShortcutTitle': "選択やプレビューを変更せずドキュメントパレットを表示",
   'editor.pickColorTitle': '色 {hex} を選択',
 
   // Frame Timeline Bar
