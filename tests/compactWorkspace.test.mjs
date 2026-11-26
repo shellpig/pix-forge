@@ -297,3 +297,17 @@ test('compact color picker is opt-in for the brush and falls back to vertical in
   assert.match(bar,/onEnter=\{\(\)=>\{if\(normalizeDocumentHex\(brushDraft\)\)setPickerOpen\(false\);\}\}/);
   assert.match(bar,/palette\.slice\(0, 32\)\.map/);
 });
+
+test('stacked narrow workspace preserves a canvas stage and avoids a floating preview over mobile controls',()=>{
+  const panel=readFileSync('src/components/ControlPanel.tsx','utf8');
+  const doc=readFileSync('src/components/DocumentPalette.tsx','utf8');
+  const css=readFileSync('src/index.css','utf8');
+  assert.match(app,/h-screen h-dvh w-full/);
+  assert.match(viewport,/flex-none md:flex-1 flex flex-col min-w-0 min-h-0/);
+  assert.match(viewport,/min-h-\[clamp\(260px,50dvh,480px\)\] md:min-h-0/);
+  assert.match(viewport,/data-testid="pixel-edit-canvas"/);
+  assert.match(viewport,/relative self-end max-w-full md:absolute/);
+  assert.match(panel,/flex-none md:flex-1 md:overflow-y-auto studio-scroll/);
+  assert.match(doc,/querySelector\('\[data-color-picker-layout\] input:not\(\[type="range"\]\)'\)\?\.scrollIntoView/);
+  assert.match(css,/@media \(pointer: coarse\) \{\s*\.color-picker-channel input\[type="range"\]\.studio-slider \{\s*height: 24px/);
+});
