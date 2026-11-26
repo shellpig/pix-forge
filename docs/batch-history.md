@@ -21,7 +21,7 @@ Phase 03-A adds the transaction infrastructure. Phase 03-B exposes sequence pale
 
 ## Validation
 
-`npm test`, `npm run lint`, and `npm run build` run in CI. Core regression tests cover exact frame identity, interleaved edits, undo/redo blocking, branch forks, structural retirement, both history caps, memory rejection, special states, transparency, and a 120-frame 256×256 sequence (60 MiB charged batch history). Source-level integration tests do not replace real browser interaction tests. Phase 03-B adds the sequence palette UI; real browser verification is still required.
+`npm test`, `npm run lint`, and `npm run build` run in CI. Core regression tests cover exact frame identity, interleaved edits, undo/redo blocking, branch forks, structural retirement, both history caps, memory rejection, special states, transparency, and a 120-frame 256×256 sequence (60 MiB charged batch history). Source-level integration tests complement real browser interaction testing. Phase 03 browser and manual verification was completed and confirmed by the project owner on 2026-11-26.
 
 ## Phase 03-B — Sequence palette workflow
 
@@ -32,4 +32,4 @@ Phase 03-A adds the transaction infrastructure. Phase 03-B exposes sequence pale
 - Live sequence preview retains only the mapping and its committed frame-array/config/view identity. The canvas renders the currently selected frame on demand; scrub paused frames to compare. The timeline, original output swatches, exports and IndexedDB continue using committed pixels. Playback, scope changes, membership/reorder, committed edits, configuration or view changes discard stale preview. Apply can consume only the matching current sequence draft; Ctrl+Z/Esc cancel the whole draft without moving history.
 - Apply creates one atomic batch through Phase 03-A. The all-frame palette's Undo/Redo buttons follow global journal order (including other edit types); current-frame tools retain local semantics. No automatic merge or deployment is performed.
 
-Browser interaction testing remains pending. CI tests cover aggregate frequency, frame membership, affected-frame bytes, scrub preview isolation, exact mapping checks, cross-frame manual/auto merge, one-step batch Undo/Redo and existing 120-frame stress cases.
+Phase 03-A and Phase 03-B browser and manual verification is complete, as confirmed by the project owner on 2026-11-26. All 80 automated tests, TypeScript checks, and the production build passed in CI. CI tests cover aggregate frequency, frame membership, affected-frame bytes, scrub preview isolation, exact mapping checks, cross-frame manual/auto merge, one-step batch Undo/Redo and existing 120-frame stress cases.
