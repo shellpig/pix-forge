@@ -87,10 +87,12 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     setCopyStatus(null);
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
   } else if (lastImage !== paletteIdentity) {
     setLastImage(paletteIdentity);
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
     setSelected(prev=>prev.filter(c=>colorSet.has(c)));
     setChooseTarget(false);
     setOverrides(new Map());
@@ -214,6 +216,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     onCancelPreview();
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
     setChooseTarget(false);
     setOverrides(new Map());
     setTolerance(0);
