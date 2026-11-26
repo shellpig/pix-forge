@@ -13,6 +13,7 @@ interface Props {
   onReplaceColor: (source: string, target: string) => boolean;
   onApplyColors: (mapping: ReadonlyMap<string,string>) => boolean;
   previewActive: boolean;
+  draftResetVersion: number;
   previewDisabled: boolean;
   onPreviewColors: (mapping: ReadonlyMap<string, string>) => void;
   onCancelPreview: () => void;
@@ -31,7 +32,7 @@ const MODES: {id:Mode; label:TranslationKey}[] = [
 const secondary = 'w-full rounded border border-[#2A3142] px-2 py-1 text-xs text-[#CBD5E1] disabled:opacity-40';
 const primary = 'w-full rounded bg-sky-600 hover:bg-sky-500 text-white py-1.5 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed';
 
-export function DocumentPalette({ imageData, disabled, canUndo, canRedo, onReplaceColor, onApplyColors, previewActive, previewDisabled, onPreviewColors, onCancelPreview, onPickColor, onUndo, onRedo }: Props) {
+export function DocumentPalette({ imageData, disabled, canUndo, canRedo, onReplaceColor, onApplyColors, previewActive, draftResetVersion, previewDisabled, onPreviewColors, onCancelPreview, onPickColor, onUndo, onRedo }: Props) {
   const { t } = useI18n();
   const colors = useMemo(() => collectDocumentColors(imageData.data), [imageData]);
   const colorSet = useMemo(()=>new Set(colors.map(c=>c.hex)),[colors]);
@@ -46,10 +47,22 @@ export function DocumentPalette({ imageData, disabled, canUndo, canRedo, onRepla
   const [overrides, setOverrides] = useState<ReadonlyMap<string,string>>(new Map());
   const [copyStatus, setCopyStatus] = useState<{hex:string;ok:boolean}|null>(null);
   const [lastImage, setLastImage] = useState(imageData);
+  const [lastDraftResetVersion, setLastDraftResetVersion] = useState(draftResetVersion);
 
   // Reset transaction-local choices after external committed-image changes.
   // Keep only still-valid source selections; never re-preview automatically.
-  if (lastImage !== imageData) {
+  if (lastDraftResetVersion !== draftResetVersion) {
+    // Undo/Escape/canvas cancellation consumes the entire transient transaction.
+    // Preserve the current mode, search, pagination and live-preview preference.
+    setLastDraftResetVersion(draftResetVersion);
+    setLastImage(imageData);
+    setSelected([]);
+    setDraft('');
+    setChooseTarget(false);
+    setTolerance(0);
+    setOverrides(new Map());
+    setCopyStatus(null);
+  } else if (lastImage !== imageData) {
     setLastImage(imageData);
     setSelected(prev=>prev.filter(c=>colorSet.has(c)));
     setChooseTarget(false);
