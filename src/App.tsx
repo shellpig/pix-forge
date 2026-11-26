@@ -148,6 +148,8 @@ export default function App() {
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
   const [isConversionPending, setIsConversionPending] = useState(false);
   const [palettePreview, setPalettePreview] = useState<PalettePreviewSession | null>(null);
+  const [paletteDraftResetVersion, setPaletteDraftResetVersion] = useState(0);
+  const previewShortcutConsumedRef = useRef(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [editor, setEditor] = useState<PixelEditorState>({
@@ -237,7 +239,17 @@ export default function App() {
     if (palettePreview && !previewImageData) setPalettePreview(null);
   }, [palettePreview, previewImageData]);
 
+  // Low-level cancellation is also used for no-op mappings and preview toggles.
   const cancelPalettePreview = useCallback(() => setPalettePreview(null), []);
+
+  // Explicit cancellation discards the draft as well as its rendered preview.
+  // Returning true consumes a history action without touching either stack.
+  const dismissPalettePreview = useCallback((): boolean => {
+    if (!previewImageData) return false;
+    setPalettePreview(null);
+    setPaletteDraftResetVersion(version => version + 1);
+    return true;
+  }, [previewImageData]);
 
   const timelineFrames: TimelineFramePreview[] = useMemo(
     () =>
@@ -781,7 +793,7 @@ export default function App() {
   );
 
   const handleUndo = useCallback(() => {
-    setPalettePreview(null);
+    if (dismissPalettePreview()) return;
     if (!activeFrame || activeFrame.historyIndex <= 0) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
@@ -799,10 +811,10 @@ export default function App() {
         break;
       }
     }
-  }, [activeFrame]);
+  }, [activeFrame, dismissPalettePreview]);
 
   const handleRedo = useCallback(() => {
-    setPalettePreview(null);
+    if (dismissPalettePreview()) return;
     if (!activeFrame || activeFrame.historyIndex >= activeFrame.editHistory.length - 1) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
@@ -820,10 +832,10 @@ export default function App() {
         break;
       }
     }
-  }, [activeFrame]);
+  }, [activeFrame, dismissPalettePreview]);
 
   const handleGlobalUndo = useCallback((): boolean => {
-    setPalettePreview(null);
+    if (dismissPalettePreview()) return true;
     while (undoStackRef.current.length > 0) {
       const entry = undoStackRef.current.pop()!;
       if (entry.type === 'delete-frame') {
@@ -859,10 +871,10 @@ export default function App() {
       return true;
     }
     return false;
-  }, [activeFrame, handleUndo]);
+  }, [activeFrame, handleUndo, dismissPalettePreview]);
 
   const handleGlobalRedo = useCallback((): boolean => {
-    setPalettePreview(null);
+    if (dismissPalettePreview()) return true;
     while (redoStackRef.current.length > 0) {
       const entry = redoStackRef.current.pop()!;
       if (entry.type === 'delete-frame') {
@@ -904,7 +916,7 @@ export default function App() {
       return true;
     }
     return false;
-  }, [activeFrame, handleRedo]);
+  }, [activeFrame, handleRedo, dismissPalettePreview]);
 
   const handleAutoRemoveBg = useCallback(() => {
     if (!activeResult) return;
@@ -985,24 +997,41 @@ export default function App() {
   // Keyboard shortcuts for Edit Mode & Animate Mode
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
       const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      ) {
-        return;
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      const historyShortcut = mod && (key === 'z' || key === 'y');
+
+      // Consume the first history shortcut (or Escape) during preview, even
+      // when a color input or slider has focus. Holding the key must not
+      // immediately undo the preceding committed edit through auto-repeat.
+      if (historyShortcut || key === 'escape') {
+        if (!e.repeat) previewShortcutConsumedRef.current = false;
+        if (e.repeat && previewShortcutConsumedRef.current) {
+          e.preventDefault();
+          return;
+        }
+        if (dismissPalettePreview()) {
+          previewShortcutConsumedRef.current = true;
+          e.preventDefault();
+          return;
+        }
       }
 
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'z') {
-        const handled = e.shiftKey ? handleGlobalRedo() : handleGlobalUndo();
+      const textEditing = target && (
+        target.tagName === 'TEXTAREA' || target.isContentEditable ||
+        (target instanceof HTMLInputElement &&
+          !['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color'].includes(target.type))
+      );
+      if (historyShortcut && !textEditing) {
+        const handled = key === 'y' || e.shiftKey ? handleGlobalRedo() : handleGlobalUndo();
         if (handled) e.preventDefault();
         return;
       }
-      if (mod && e.key.toLowerCase() === 'y') {
-        if (handleGlobalRedo()) e.preventDefault();
-        return;
-      }
+
+      // Preserve native text editing and other input-specific shortcuts.
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 
       if (viewMode === 'animate' && !mod && !e.altKey) {
         if (e.code === 'Space') {
@@ -1032,7 +1061,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame]);
+  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame, dismissPalettePreview]);
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
@@ -1321,11 +1350,11 @@ export default function App() {
           sourceName={activeFrame?.name ?? ''}
           result={activeResult}
           previewImageData={previewImageData}
-          onCancelPalettePreview={cancelPalettePreview}
+          onCancelPalettePreview={dismissPalettePreview}
           config={config}
           viewMode={viewMode}
           editor={editor}
-          canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
+          canUndo={Boolean(previewImageData || (activeFrame && activeFrame.historyIndex > 0))}
           canRedo={Boolean(
             activeFrame &&
               activeFrame.historyIndex >= 0 &&
@@ -1393,10 +1422,11 @@ export default function App() {
           activeFrameId={activeFrame?.id ?? null}
           paletteEditingDisabled={isPlaying || isConversionPending || isBatchProcessing}
           palettePreviewActive={previewImageData !== null}
+          paletteDraftResetVersion={paletteDraftResetVersion}
           palettePreviewDisabled={viewMode === 'crop'}
           onPreviewColors={handlePreviewDocumentColors}
           onCancelPreview={cancelPalettePreview}
-          canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
+          canUndo={Boolean(previewImageData || (activeFrame && activeFrame.historyIndex > 0))}
           canRedo={Boolean(activeFrame && activeFrame.historyIndex >= 0 && activeFrame.historyIndex < activeFrame.editHistory.length - 1)}
           onReplaceColor={handleReplaceDocumentColor}
           onApplyColors={handleApplyDocumentColors}
