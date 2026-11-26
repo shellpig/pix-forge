@@ -11,7 +11,7 @@ PixForge is a **React + TypeScript + Vite** application for converting ordinary 
 - **Downsampling styles:** Clean Sprite (color clustering), LAB Separation, K-Centroid Sharp, and Soft Area downscaling.
 - **Size and crop:** Custom 8–256 pixel dimensions, common presets, rectangular output, and interactive cropping.
 - **Image controls:** Smoothing, outline preservation, pre-sharpening, contrast, saturation, and alpha threshold.
-- **Color controls:** Auto-extracted 4–64 color palettes, classic presets, or original colors; optional Bayer 4×4 or Floyd–Steinberg dithering; isolated-pixel cleanup (Off / Light / Strong, Light by default).
+- **Color controls:** Auto-extracted 2–64 color palettes, classic presets (including black and white), or original colors; optional Bayer 4×4 or Floyd–Steinberg dithering; isolated-pixel cleanup (Off / Light / Strong, Light by default).
 - **Comparison and editing:** Side-by-side, split comparison, pixel-only view, grid, zoom, pencil, eraser, eyedropper, fill, magic wand, and undo/redo.
 - **Animation workflow:** Multi-file upload with natural filename sorting, add/delete/reorder frames, optional shared Oklab palette, and 1–30 FPS playback.
 - **Export formats:** PNG, Sprite Sheet PNG, looping GIF, and ZIP of individual PNG frames at 1×, 4×, 8×, or 16× scale.
