@@ -23,7 +23,6 @@ import {
 import { createDocumentColorPreview } from './lib/documentPalette';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
-  appendFrameEdit,
   applyFrameConversion,
   getEffectiveFrameImageData,
   getHistoryFloor,
@@ -212,11 +211,6 @@ export default function App() {
       notifyBatchRetirement(retired.retired);
     }
   }, [readHistoryJournal, publishHistoryJournal, notifyBatchRetirement]);
-
-  const pushUndoAction = useCallback((entry: UndoActionEntry) => {
-    undoStackRef.current = [...undoStackRef.current.slice(-(MAX_HISTORY - 1)), entry];
-    redoStackRef.current = [];
-  }, []);
 
   const clearUndoStacks = useCallback(() => {
     undoStackRef.current = [];
@@ -576,7 +570,7 @@ export default function App() {
                   convertedResult: null,
                   editHistory: manualImg ? [cloneImageData(manualImg), manualImg] : [],
                   historyIndex: manualImg ? 1 : -1,
-                  historyFloor: manualImg && pf.manualEditCheckpoint ? 1 : undefined,
+                  historyFloor: manualImg && pf.manualEditCheckpoint === true ? 1 : undefined,
                 };
               } catch {
                 return null;
@@ -999,21 +993,13 @@ export default function App() {
     if (currentFrames.some((f) => f.id !== id && f.historyIndex > 0 && f.editHistory.length > 0)) {
       setHasPendingReconvert(true);
     }
-    pushUndoAction({ type: 'delete-frame', frame: removedFrame, index: removedIdx });
-    setFrames((prev) => {
-      if (prev.length <= 1) return prev;
-      const idx = prev.findIndex((f) => f.id === id);
-      if (idx < 0) return prev;
-      const next = prev.filter((f) => f.id !== id);
-      setActiveFrameId((curId) => {
-        if (curId !== id) return curId;
-        const fallbackIdx = Math.min(idx, next.length - 1);
-        return next[fallbackIdx]?.id ?? null;
-      });
-      if (next.length <= 1) setIsPlaying(false);
-      return next;
-    });
-  }, [pushUndoAction, sealBatchHistory]);
+    const journal = readHistoryJournal();
+    const entry: UndoActionEntry = { type: 'delete-frame', frame: removedFrame, index: removedIdx };
+    const next = journal.frames.filter(f => f.id !== id);
+    publishHistoryJournal({frames:next, undo:[...journal.undo,entry].slice(-MAX_HISTORY), redo:[]});
+    setActiveFrameId(curId => curId === id ? next[Math.min(removedIdx,next.length-1)]?.id ?? null : curId);
+    if (next.length <= 1) setIsPlaying(false);
+  }, [sealBatchHistory, readHistoryJournal, publishHistoryJournal]);
 
   // Keyboard shortcuts for Edit Mode & Animate Mode
   useEffect(() => {
