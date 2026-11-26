@@ -231,12 +231,12 @@ export function PixelEditorBar({
       </div>
 
       {pickerOpen && (
-        <div className="self-start w-full max-w-72 rounded border border-[#2A3142] bg-[#0D1017] p-2">
-          <div className="flex items-center justify-between mb-2 gap-2 text-xs">
+        <div className="brush-color-picker self-start w-full max-w-[44rem] min-w-0 rounded border border-[#2A3142] bg-[#0D1017] px-2 py-1.5">
+          <div className="flex items-center justify-between mb-1 gap-2 text-xs">
             <span>{t('editor.colorTitle')}</span>
             <button type="button" onClick={()=>setPickerOpen(false)} className="text-sky-300 hover:text-sky-200">{t('colorPicker.close')}</button>
           </div>
-          <ColorPicker value={brushDraft} onChange={changeBrush} onEnter={()=>{if(normalizeDocumentHex(brushDraft))setPickerOpen(false);}}/>
+          <ColorPicker layout="compact" value={brushDraft} onChange={changeBrush} onEnter={()=>{if(normalizeDocumentHex(brushDraft))setPickerOpen(false);}}/>
         </div>
       )}
 
