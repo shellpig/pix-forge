@@ -12,6 +12,8 @@ import {
   Unlock,
 } from 'lucide-react';
 import { DocumentPalette } from './DocumentPalette';
+import type { PaletteScope, SequencePalette } from '../lib/sequencePalette';
+import type { BatchBlockReason } from '../lib/batchHistory';
 import { PRESET_PALETTES } from '../lib/palettes';
 import {
   getSpriteSheetLayout,
@@ -48,6 +50,17 @@ interface ControlPanelProps {
   onPickColor: (hex: string) => void;
   activeFrameId: string | null;
   paletteEditingDisabled: boolean;
+  paletteScope: PaletteScope;
+  onChangePaletteScope: (scope: PaletteScope) => void;
+  sequencePalette: SequencePalette | null;
+  sequenceBlockReason: BatchBlockReason | null;
+  sequenceFrameNames: {id:string;name:string;index:number}[];
+  onPreviewSequenceColors: (mapping: ReadonlyMap<string,string>) => void;
+  onApplySequenceColors: (mapping: ReadonlyMap<string,string>) => BatchBlockReason | null;
+  canUndoSequence: boolean;
+  canRedoSequence: boolean;
+  onUndoSequence: () => void;
+  onRedoSequence: () => void;
   palettePreviewActive: boolean;
   paletteDraftResetVersion: number;
   palettePreviewDisabled: boolean;
@@ -110,6 +123,9 @@ export function ControlPanel({
   onPickColor,
   activeFrameId,
   paletteEditingDisabled,
+  paletteScope, onChangePaletteScope, sequencePalette, sequenceBlockReason,
+  sequenceFrameNames, onPreviewSequenceColors, onApplySequenceColors,
+  canUndoSequence, canRedoSequence, onUndoSequence, onRedoSequence,
   palettePreviewActive,
   paletteDraftResetVersion,
   palettePreviewDisabled,
@@ -627,23 +643,38 @@ export function ControlPanel({
             </div>
           )}
 
+          {result && sequenceFrameNames.length > 1 && (
+            <div className="flex rounded border border-[#2A3142] overflow-hidden mt-2">
+              {(['frame','sequence'] as const).map(scope => (
+                <button key={scope} type="button" aria-pressed={paletteScope===scope}
+                  onClick={()=>onChangePaletteScope(scope)}
+                  className={'flex-1 py-1.5 text-xs '+(paletteScope===scope?'bg-sky-500/20 text-sky-200':'text-[#94A3B8]')}>
+                  {t(scope==='frame'?'sequencePalette.currentFrame':'sequencePalette.allFrames')}
+                </button>
+              ))}
+            </div>
+          )}
           {result && (
             <DocumentPalette
-              key={activeFrameId ?? 'none'}
+              key={paletteScope === 'sequence' ? 'sequence' : activeFrameId ?? 'none'}
               imageData={result.imageData}
-              disabled={paletteEditingDisabled}
+              sequencePalette={paletteScope === 'sequence' ? sequencePalette : null}
+              sequenceFrameNames={sequenceFrameNames}
+              sequenceBlockReason={paletteScope === 'sequence' ? sequenceBlockReason : null}
+              onApplySequenceColors={onApplySequenceColors}
+              disabled={paletteEditingDisabled || (paletteScope === 'sequence' && !!sequenceBlockReason)}
               previewActive={palettePreviewActive}
               draftResetVersion={paletteDraftResetVersion}
               previewDisabled={palettePreviewDisabled}
-              onPreviewColors={onPreviewColors}
+              onPreviewColors={paletteScope === 'sequence' ? onPreviewSequenceColors : onPreviewColors}
               onCancelPreview={onCancelPreview}
-              canUndo={canUndo}
-              canRedo={canRedo}
+              canUndo={paletteScope === 'sequence' ? canUndoSequence : canUndo}
+              canRedo={paletteScope === 'sequence' ? canRedoSequence : canRedo}
               onReplaceColor={onReplaceColor}
               onApplyColors={onApplyColors}
               onPickColor={onPickColor}
-              onUndo={onUndo}
-              onRedo={onRedo}
+              onUndo={paletteScope === 'sequence' ? onUndoSequence : onUndo}
+              onRedo={paletteScope === 'sequence' ? onRedoSequence : onRedo}
             />
           )}
         </section>

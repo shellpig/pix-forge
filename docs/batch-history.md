@@ -2,7 +2,7 @@
 
 ## Scope
 
-This phase adds the transaction infrastructure only. Phase 03-B will expose sequence palette statistics and the all-frame editing UI. Existing single-frame tools, quick palette, output palette, and Phase 02 preview cancellation remain available.
+Phase 03-A adds the transaction infrastructure. Phase 03-B exposes sequence palette statistics and the all-frame editing UI. Existing single-frame tools, quick palette, output palette, and Phase 02 preview cancellation remain available.
 
 ## Contract
 
@@ -21,4 +21,15 @@ This phase adds the transaction infrastructure only. Phase 03-B will expose sequ
 
 ## Validation
 
-`npm test`, `npm run lint`, and `npm run build` run in CI. Core regression tests cover exact frame identity, interleaved edits, undo/redo blocking, branch forks, structural retirement, both history caps, memory rejection, special states, transparency, and a 120-frame 256×256 sequence (60 MiB charged batch history). Source-level integration tests do not replace real browser interaction tests. Phase 03-B will add the actual sequence palette UI; browser testing of that UI is intentionally deferred.
+`npm test`, `npm run lint`, and `npm run build` run in CI. Core regression tests cover exact frame identity, interleaved edits, undo/redo blocking, branch forks, structural retirement, both history caps, memory rejection, special states, transparency, and a 120-frame 256×256 sequence (60 MiB charged batch history). Source-level integration tests complement real browser interaction testing. Phase 03 browser and manual verification was completed and confirmed by the project owner on 2026-11-26.
+
+## Phase 03-B — Sequence palette workflow
+
+- The document palette defaults to the current frame. With multiple frames, choose All frames to aggregate the actual effective committed pixels from every converted frame (including manual edits), independent of the conversion shared-palette switch. Transparent pixels do not participate.
+- Each sequence swatch displays HEX, total pixels, and the number of frames containing the color. Open its information button to see frame numbers and names. The counts are union statistics, not the sum of per-frame unique color counts.
+- Single replacement, manual merge, and complete-link OKLab automatic merge use the same simultaneous mapping and existing representative-color rules. The 256-color automatic limit applies to the union palette; manual merging is not subject to that limit.
+- Before applying, the UI shows expected union color count, changed pixels, affected frames, and conservative before/after snapshot charge. A transaction exceeding 64 MiB is disabled; the journal still checks the limit independently. Unconverted/failed conversion, pending reconversion, playback, and an unrelated preview cannot be bypassed.
+- Live sequence preview retains only the mapping and its committed frame-array/config/view identity. The canvas renders the currently selected frame on demand; scrub paused frames to compare. The timeline, original output swatches, exports and IndexedDB continue using committed pixels. Playback, scope changes, membership/reorder, committed edits, configuration or view changes discard stale preview. Apply can consume only the matching current sequence draft; Ctrl+Z/Esc cancel the whole draft without moving history.
+- Apply creates one atomic batch through Phase 03-A. The all-frame palette's Undo/Redo buttons follow global journal order (including other edit types); current-frame tools retain local semantics. No automatic merge or deployment is performed.
+
+Phase 03-A and Phase 03-B browser and manual verification is complete, as confirmed by the project owner on 2026-11-26. All 80 automated tests, TypeScript checks, and the production build passed in CI. CI tests cover aggregate frequency, frame membership, affected-frame bytes, scrub preview isolation, exact mapping checks, cross-frame manual/auto merge, one-step batch Undo/Redo and existing 120-frame stress cases.

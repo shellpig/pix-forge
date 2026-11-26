@@ -50,6 +50,7 @@ interface CanvasViewportProps {
   sourceName: string;
   result: PixelEngineResult | null;
   previewImageData: ImageData | null;
+  sequencePreviewActive: boolean;
   onCancelPalettePreview: () => void;
   config: PixelEngineConfig;
   viewMode: ViewMode;
@@ -188,6 +189,7 @@ export function CanvasViewport({
   sourceName,
   result,
   previewImageData,
+  sequencePreviewActive,
   onCancelPalettePreview,
   config,
   viewMode,
@@ -1060,7 +1062,7 @@ export function CanvasViewport({
 
       {previewImageData && (
         <div role="status" className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
-          <span>{t('documentPalette.previewNotice')}</span>
+          <span>{t(sequencePreviewActive ? 'sequencePalette.previewNotice' : 'documentPalette.previewNotice')}</span>
           <button type="button" onClick={onCancelPalettePreview} className="px-2.5 py-1 bg-[#161A23] border border-[#2D3546] rounded hover:text-sky-300">
             {t('documentPalette.cancelPreview')}
           </button>
