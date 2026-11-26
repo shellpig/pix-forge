@@ -20,7 +20,7 @@ export const zhTW = {
   'sample.clipboardName': '剪貼簿圖片.png',
 
   // App Errors
-  'error.imageLoad': '圖片載入失敗',
+
   'error.sampleLoad': '範例圖片載入失敗。',
   'error.uploadRead': '部分圖片無法讀取，請確認格式為 PNG / JPG / WebP。',
   'error.batchConvert': '批次轉換運算發生錯誤',
