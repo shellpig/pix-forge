@@ -8,11 +8,13 @@ on:
       - feat/document-palette-phase-3a
       - feat/document-palette-phase-3b
       - feat/document-palette-phase-4a
+      - feat/document-palette-phase-4b
   pull_request:
     branches:
       - main
       - feat/document-palette-phase-2b
       - feat/document-palette-phase-3a
+      - feat/document-palette-phase-4a
   workflow_dispatch:
 
 permissions:
