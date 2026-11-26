@@ -1507,7 +1507,10 @@ export default function App() {
           onDeleteFrame={handleDeleteFrame}
           onUploadFiles={handleUploadFiles}
           onOpenUpload={() => fileInputRef.current?.click()}
-          onUpdateEditor={(patch) => setEditor((p) => ({ ...p, ...patch }))}
+          onUpdateEditor={(patch) => {
+            if (activeCanvasPick && patch.tool) dismissPalettePreview();
+            setEditor((p) => ({ ...p, ...patch }));
+          }}
           onCommitImageData={handleCommitImageData}
           onUndo={handleUndo}
           onRedo={handleRedo}
