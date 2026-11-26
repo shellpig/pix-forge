@@ -187,3 +187,17 @@ test('preview keyboard cancellation consumes first Ctrl+Z, ignores held-key repe
   assert.equal(redo,1);
   assert.equal(cancels,3);
 });
+
+test('batch pixel journal is the shared local/global history path and never persists transient transactions',()=>{
+  assert.match(app,/commitSinglePixelEdit\(readHistoryJournal\(\), activeFrame.id, next\)/);
+  assert.match(app,/commitSequenceColors\(readHistoryJournal\(\), mapping,/);
+  assert.match(app,/moveFramePixelHistory\(readHistoryJournal\(\), activeFrame.id, 'undo'\)/);
+  assert.match(app,/moveFramePixelHistory\(readHistoryJournal\(\), activeFrame.id, 'redo'\)/);
+  assert.match(app,/movePixelEntry\(readHistoryJournal\(\), entry, 'undo'\)/);
+  assert.match(app,/movePixelEntry\(readHistoryJournal\(\), entry, 'redo'\)/);
+  assert.match(app,/framesRef.current = journal.frames;\s*undoStackRef.current = journal.undo;\s*redoStackRef.current = journal.redo;\s*setFrames\(journal.frames\)/);
+  assert.match(app,/sealBatchHistory\(\);\s*const currentFrames = framesRef.current;/);
+  assert.match(app,/sealBatchHistory\(targetId\)/);
+  assert.match(app,/manualEditCheckpoint: manualImg && \(getHistoryFloor\(f\) > 0 \|\| appliedBatchFrameIds.has\(f.id\)\)/);
+  assert.match(app,/historyFloor: manualImg && pf.manualEditCheckpoint === true \? 1 : undefined/);
+});
