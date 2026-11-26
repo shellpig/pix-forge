@@ -9,7 +9,7 @@ const browser = await chromium.launch({headless:true});
 const base=process.env.PIXFORGE_BROWSER_URL || 'http://127.0.0.1:4173';
 const out=resolve('browser-artifacts');
 await mkdir(out,{recursive:true});
-const canvasSelector='[data-testid="pixel-edit-canvas"] canvas';
+const canvasSelector='[data-testid="pixel-edit-bitmap"]';
 const paletteSelector='#document-palette';
 let passed=0;
 const cases=[];
@@ -25,7 +25,7 @@ const pageFor=async (viewport, touch=false)=>{
   await page.goto(base);
   await page.getByRole('button',{name:'Pixel Edit',exact:true}).click();
   await page.waitForFunction(()=> {
-    const c=document.querySelector('[data-testid="pixel-edit-canvas"] canvas');
+    const c=document.querySelector('[data-testid="pixel-edit-bitmap"]');
     return c && c.width>0 && c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3 && v===255);
   });
   await page.getByRole('button',{name:'Replace color',exact:true}).waitFor({state:'visible'});
@@ -66,7 +66,7 @@ const waitHex=async (locator,hex)=>locator.evaluate((el,hex)=>new Promise((res,r
   tick();
 }),hex);
 const waitPixels=async(page,expected)=>page.waitForFunction(expected=>{
-  const c=document.querySelector('[data-testid="pixel-edit-canvas"] canvas');
+  const c=document.querySelector('[data-testid="pixel-edit-bitmap"]');
   if(!c)return false;
   const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
   return data.length===expected.length&&data.every((v,i)=>v===expected[i]);
