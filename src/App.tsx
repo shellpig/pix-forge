@@ -901,7 +901,7 @@ export default function App() {
 
   const handleApplySequencePalette = useCallback((mapping: ReadonlyMap<string,string>): BatchBlockReason | null => {
     const result = handleApplySequenceColors(mapping);
-    return result.ok ? null : result.reason;
+    return result.ok === false ? result.reason : null;
   }, [handleApplySequenceColors]);
 
   const handleUndo = useCallback(() => {
