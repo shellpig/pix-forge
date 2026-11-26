@@ -23,10 +23,15 @@ import {
 import { createDocumentColorPreview } from './lib/documentPalette';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
-  appendFrameEdit,
   applyFrameConversion,
   getEffectiveFrameImageData,
+  getHistoryFloor,
 } from './lib/frameHistory';
+import {
+  commitSinglePixelEdit, commitSequenceColors, moveFramePixelHistory,
+  movePixelEntry, retireBatchHistory, canMoveFramePixelHistory,
+  MAX_PIXEL_HISTORY, type HistoryEntry, type HistoryJournal,
+} from './lib/batchHistory';
 import {
   exportAnimatedGifBlob,
   exportFramesZipBlob,
@@ -57,6 +62,7 @@ interface AnimationFrameItem {
   convertedResult: PixelEngineResult | null;
   editHistory: ImageData[];
   historyIndex: number;
+  historyFloor?: number;
 }
 
 interface PalettePreviewSession {
@@ -68,9 +74,7 @@ interface PalettePreviewSession {
   imageData: ImageData;
 }
 
-type UndoActionEntry =
-  | { type: 'pixel-edit'; frameId: string }
-  | { type: 'delete-frame'; frame: AnimationFrameItem; index: number };
+type UndoActionEntry = HistoryEntry<AnimationFrameItem>;
 
 const BUILTIN_SAMPLES: Array<{
   id: string;
@@ -107,7 +111,7 @@ const VIEW_TABS: Array<{ id: ViewMode; labelKey: TranslationKey }> = [
   { id: 'animate', labelKey: 'tab.animate' },
 ];
 
-const MAX_HISTORY = 40;
+const MAX_HISTORY = MAX_PIXEL_HISTORY;
 const NATURAL_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 function makeFrameId(): string {
@@ -147,6 +151,8 @@ export default function App() {
   const [hasPendingReconvert, setHasPendingReconvert] = useState<boolean>(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
   const [isConversionPending, setIsConversionPending] = useState(false);
+  const [conversionFailed, setConversionFailed] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [palettePreview, setPalettePreview] = useState<PalettePreviewSession | null>(null);
   const [paletteDraftResetVersion, setPaletteDraftResetVersion] = useState(0);
   const previewShortcutConsumedRef = useRef(false);
@@ -179,14 +185,40 @@ export default function App() {
   const undoStackRef = useRef<UndoActionEntry[]>([]);
   const redoStackRef = useRef<UndoActionEntry[]>([]);
 
-  const pushUndoAction = useCallback((entry: UndoActionEntry) => {
-    undoStackRef.current = [...undoStackRef.current.slice(-(MAX_HISTORY - 1)), entry];
-    redoStackRef.current = [];
+  const readHistoryJournal = useCallback((): HistoryJournal<AnimationFrameItem> => ({
+    frames: framesRef.current, undo: undoStackRef.current, redo: redoStackRef.current,
+  }), []);
+
+  // All history transitions publish a complete frame array and both stacks
+  // together. Updating the ref also prevents rapid events from reading stale frames.
+  const publishHistoryJournal = useCallback((journal: HistoryJournal<AnimationFrameItem>) => {
+    framesRef.current = journal.frames;
+    undoStackRef.current = journal.undo;
+    redoStackRef.current = journal.redo;
+    setFrames(journal.frames);
   }, []);
+
+  const notifyBatchRetirement = useCallback((count: number) => {
+    if (count > 0) setHistoryNotice(tRef.current('history.batchCheckpoint', {count}));
+  }, []);
+
+  // A reconversion, membership change or explicit reset may invalidate a
+  // conversion baseline. Retire whole batch boundaries before those actions.
+  const sealBatchHistory = useCallback((frameId?: string) => {
+    const journal = readHistoryJournal();
+    if (frameId && ![...journal.undo, ...journal.redo].some(entry =>
+      entry.type === 'batch-pixel-edit' && entry.changes.some(change => change.frameId === frameId))) return;
+    const retired = retireBatchHistory(journal);
+    if (retired.retired) {
+      publishHistoryJournal(retired.journal);
+      notifyBatchRetirement(retired.retired);
+    }
+  }, [readHistoryJournal, publishHistoryJournal, notifyBatchRetirement]);
 
   const clearUndoStacks = useCallback(() => {
     undoStackRef.current = [];
     redoStackRef.current = [];
+    setHistoryNotice(null);
   }, []);
 
   const activeFrame = useMemo(() => {
@@ -198,6 +230,9 @@ export default function App() {
     () => frames.some((f) => f.historyIndex > 0 && f.editHistory.length > 0),
     [frames]
   );
+
+  const canUndoActive = Boolean(activeFrame && canMoveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'undo'));
+  const canRedoActive = Boolean(activeFrame && canMoveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'redo'));
 
   const activeFrameHasManualEdits = Boolean(
     activeFrame && activeFrame.historyIndex > 0 && activeFrame.editHistory.length > 0
@@ -265,10 +300,12 @@ export default function App() {
   // Debounce slider changes, and run the complete batch conversion inside a
   // module Worker so heavy multi-frame processing never blocks React painting.
   useEffect(() => {
+    sealBatchHistory();
     const currentFrames = framesRef.current;
     if (currentFrames.length === 0) {
       setIsBatchProcessing(false);
       setIsConversionPending(false);
+      setConversionFailed(false);
       return;
     }
 
@@ -278,6 +315,7 @@ export default function App() {
     let computeRaf = 0;
     setIsBatchProcessing(currentFrames.length > 1);
     setIsConversionPending(true);
+    setConversionFailed(false);
 
     const applyResults = (results: PixelEngineResult[]) => {
       if (cancelled) return;
@@ -292,6 +330,7 @@ export default function App() {
         })
       );
       setErrorMsg(null);
+      setConversionFailed(false);
       setIsBatchProcessing(false);
       setIsConversionPending(false);
     };
@@ -299,6 +338,7 @@ export default function App() {
     const reportError = (err: unknown) => {
       if (cancelled) return;
       setErrorMsg(err instanceof Error ? err.message : String(err || tRef.current('error.batchConvert')));
+      setConversionFailed(true);
       setIsBatchProcessing(false);
       setIsConversionPending(false);
     };
@@ -374,7 +414,7 @@ export default function App() {
       window.cancelAnimationFrame(computeRaf);
       worker?.terminate(); // Discard stale jobs when sliders or frames change.
     };
-  }, [sourceKey, config]);
+  }, [sourceKey, config, sealBatchHistory]);
 
   // Animation playback loop (rAF with exact FPS delta accumulation)
   useEffect(() => {
@@ -417,17 +457,18 @@ export default function App() {
   }, []);
 
   const clearAllManualEdits = useCallback(() => {
-    setFrames((prev) => prev.map((f) => ({ ...f, editHistory: [], historyIndex: -1 })));
-    undoStackRef.current = undoStackRef.current.filter((e) => e.type !== 'pixel-edit');
-    redoStackRef.current = redoStackRef.current.filter((e) => e.type !== 'pixel-edit');
+    setFrames((prev) => prev.map((f) => ({ ...f, editHistory: [], historyIndex: -1, historyFloor: undefined })));
+    undoStackRef.current = undoStackRef.current.filter((e) => e.type === 'delete-frame');
+    redoStackRef.current = redoStackRef.current.filter((e) => e.type === 'delete-frame');
     setHasPendingReconvert(false);
   }, []);
 
   const clearActiveFrameManualEdits = useCallback(() => {
     if (!activeFrame) return;
     const targetId = activeFrame.id;
+    sealBatchHistory(targetId);
     setFrames((prev) =>
-      prev.map((f) => (f.id === targetId ? { ...f, editHistory: [], historyIndex: -1 } : f))
+      prev.map((f) => (f.id === targetId ? { ...f, editHistory: [], historyIndex: -1, historyFloor: undefined } : f))
     );
     undoStackRef.current = undoStackRef.current.filter(
       (e) => !(e.type === 'pixel-edit' && e.frameId === targetId)
@@ -436,7 +477,7 @@ export default function App() {
       (e) => !(e.type === 'pixel-edit' && e.frameId === targetId)
     );
     setHasPendingReconvert(false);
-  }, [activeFrame]);
+  }, [activeFrame, sealBatchHistory]);
 
   const getSampleFileName = useCallback((sample: (typeof BUILTIN_SAMPLES)[number]) => {
     const label = tRef.current(sample.labelKey).replace(tRef.current('sample.prefix'), '');
@@ -531,6 +572,7 @@ export default function App() {
                   convertedResult: null,
                   editHistory: manualImg ? [cloneImageData(manualImg), manualImg] : [],
                   historyIndex: manualImg ? 1 : -1,
+                  historyFloor: manualImg && pf.manualEditCheckpoint === true ? 1 : undefined,
                 };
               } catch {
                 return null;
@@ -583,6 +625,7 @@ export default function App() {
     if (!workspaceReadyRef.current || frames.length === 0) return;
 
     const timerId = window.setTimeout(() => {
+      const appliedBatchFrameIds = new Set(undoStackRef.current.flatMap(entry => entry.type === 'batch-pixel-edit' ? entry.changes.map(change => change.frameId) : []));
       const persistedFrames = frames
         .filter((f) => Boolean(f.sourceBlob || f.sampleSrc))
         .map((f) => {
@@ -596,6 +639,7 @@ export default function App() {
             sourceBlob: f.sourceBlob,
             sampleSrc: f.sampleSrc,
             manualEdit: serializeManualEdit(manualImg),
+            manualEditCheckpoint: manualImg && (getHistoryFloor(f) > 0 || appliedBatchFrameIds.has(f.id)) ? true : undefined,
           };
         });
 
@@ -660,6 +704,7 @@ export default function App() {
         if (framesRef.current.some((f) => f.historyIndex > 0 && f.editHistory.length > 0)) {
           setHasPendingReconvert(true);
         }
+        sealBatchHistory();
         setFrames((prev) => [...prev, ...loaded]);
         setActiveFrameId(loaded[0].id);
         if (framesRef.current.length + loaded.length > 1) {
@@ -708,7 +753,7 @@ export default function App() {
     } catch {
       setErrorMsg(t('error.uploadRead'));
     }
-  }, [clearUndoStacks, t]);
+  }, [clearUndoStacks, sealBatchHistory, t]);
 
   // Global Ctrl+V clipboard paste support
   useEffect(() => {
@@ -735,19 +780,13 @@ export default function App() {
   const handleCommitImageData = useCallback(
     (next: ImageData) => {
       if (!activeFrame || !activeFrame.convertedResult) return;
-      const targetId = activeFrame.id;
+      const committed = commitSinglePixelEdit(readHistoryJournal(), activeFrame.id, next);
+      if (!committed) return;
       setPalettePreview(null);
-      // Ongoing painting must not silently dismiss a pending palette change.
-
-      setFrames((prev) =>
-        prev.map((f) => {
-          if (f.id !== targetId || !f.convertedResult) return f;
-          return appendFrameEdit(f, next, MAX_HISTORY);
-        })
-      );
-      pushUndoAction({ type: 'pixel-edit', frameId: targetId });
+      publishHistoryJournal(committed.journal);
+      notifyBatchRetirement(committed.retired);
     },
-    [activeFrame, pushUndoAction]
+    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement]
   );
 
   // Every preview starts from the effective committed frame, never from an
@@ -792,131 +831,108 @@ export default function App() {
     [handleApplyDocumentColors]
   );
 
+  // Phase 03-B will expose this internal all-frame commit API in the palette
+  // UI. Phase 03-A intentionally adds no sequence editing controls.
+  const handleApplySequenceColors = useCallback((mapping: ReadonlyMap<string, string>) => {
+    const committed = commitSequenceColors(readHistoryJournal(), mapping, {
+      isPlaying, isConversionPending: isConversionPending || conversionFailed,
+      isBatchProcessing, hasPendingReconvert, hasPreview: previewImageData !== null,
+    }, globalThis.crypto?.randomUUID?.() ?? makeFrameId());
+    if (committed.ok) {
+      publishHistoryJournal(committed.journal);
+      notifyBatchRetirement(committed.retired);
+    }
+    return committed;
+  }, [readHistoryJournal, isPlaying, isConversionPending, conversionFailed, isBatchProcessing,
+    hasPendingReconvert, previewImageData, publishHistoryJournal, notifyBatchRetirement]);
+
   const handleUndo = useCallback(() => {
     if (dismissPalettePreview()) return;
-    if (!activeFrame || activeFrame.historyIndex <= 0) return;
-    const targetId = activeFrame.id;
-    setFrames((prev) =>
-      prev.map((f) =>
-        f.id === targetId && f.historyIndex > 0
-          ? { ...f, historyIndex: f.historyIndex - 1 }
-          : f
-      )
-    );
-    for (let i = undoStackRef.current.length - 1; i >= 0; i--) {
-      const entry = undoStackRef.current[i];
-      if (entry.type === 'pixel-edit' && entry.frameId === targetId) {
-        undoStackRef.current.splice(i, 1);
-        redoStackRef.current.push(entry);
-        break;
-      }
-    }
-  }, [activeFrame, dismissPalettePreview]);
+    if (!activeFrame) return;
+    const moved = moveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'undo');
+    if (moved.status === 'applied') publishHistoryJournal(moved.journal);
+    else if (moved.status === 'blocked') setHistoryNotice(tRef.current('history.batchBlocked'));
+  }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal]);
 
   const handleRedo = useCallback(() => {
     if (dismissPalettePreview()) return;
-    if (!activeFrame || activeFrame.historyIndex >= activeFrame.editHistory.length - 1) return;
-    const targetId = activeFrame.id;
-    setFrames((prev) =>
-      prev.map((f) =>
-        f.id === targetId && f.historyIndex < f.editHistory.length - 1
-          ? { ...f, historyIndex: f.historyIndex + 1 }
-          : f
-      )
-    );
-    for (let i = redoStackRef.current.length - 1; i >= 0; i--) {
-      const entry = redoStackRef.current[i];
-      if (entry.type === 'pixel-edit' && entry.frameId === targetId) {
-        redoStackRef.current.splice(i, 1);
-        undoStackRef.current.push(entry);
-        break;
-      }
-    }
-  }, [activeFrame, dismissPalettePreview]);
+    if (!activeFrame) return;
+    const moved = moveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'redo');
+    if (moved.status === 'applied') publishHistoryJournal(moved.journal);
+    else if (moved.status === 'blocked') setHistoryNotice(tRef.current('history.batchBlocked'));
+  }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal]);
 
   const handleGlobalUndo = useCallback((): boolean => {
     if (dismissPalettePreview()) return true;
     while (undoStackRef.current.length > 0) {
-      const entry = undoStackRef.current.pop()!;
+      const entry = undoStackRef.current[undoStackRef.current.length - 1];
       if (entry.type === 'delete-frame') {
-        if (framesRef.current.some((f) => f.id === entry.frame.id)) continue;
-        setFrames((prev) => {
-          if (prev.some((f) => f.id === entry.frame.id)) return prev;
-          const next = [...prev];
-          const insertAt = Math.max(0, Math.min(entry.index, next.length));
-          next.splice(insertAt, 0, entry.frame);
-          return next;
-        });
+        // Membership changes invalidate any batch boundaries (including redo).
+        sealBatchHistory();
+        undoStackRef.current.pop();
+        if (framesRef.current.some(f => f.id === entry.frame.id)) continue;
+        const journal = readHistoryJournal();
+        const next = [...journal.frames];
+        next.splice(Math.max(0, Math.min(entry.index, next.length)), 0, entry.frame);
+        publishHistoryJournal({...journal, frames:next, redo:[...journal.redo,entry]});
         setActiveFrameId(entry.frame.id);
-        redoStackRef.current.push(entry);
         return true;
       }
-
-      const target = framesRef.current.find((f) => f.id === entry.frameId);
-      if (!target || target.historyIndex <= 0) continue;
-      setFrames((prev) =>
-        prev.map((f) =>
-          f.id === entry.frameId && f.historyIndex > 0
-            ? { ...f, historyIndex: f.historyIndex - 1 }
-            : f
-        )
-      );
-      setActiveFrameId(entry.frameId);
-      redoStackRef.current.push(entry);
-      return true;
+      const moved = movePixelEntry(readHistoryJournal(), entry, 'undo');
+      if (moved.status === 'applied') {
+        publishHistoryJournal(moved.journal);
+        if (entry.type === 'pixel-edit') setActiveFrameId(entry.frameId);
+        return true;
+      }
+      if (moved.status === 'blocked') {
+        setHistoryNotice(tRef.current('history.batchBlocked'));
+        return true;
+      }
+      undoStackRef.current.pop();
     }
-
-    if (activeFrame && activeFrame.historyIndex > 0) {
-      handleUndo();
-      return true;
+    if (activeFrame) {
+      const moved = moveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'undo');
+      if (moved.status === 'applied') { publishHistoryJournal(moved.journal); return true; }
+      if (moved.status === 'blocked') { setHistoryNotice(tRef.current('history.batchBlocked')); return true; }
     }
     return false;
-  }, [activeFrame, handleUndo, dismissPalettePreview]);
+  }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal, sealBatchHistory]);
 
   const handleGlobalRedo = useCallback((): boolean => {
     if (dismissPalettePreview()) return true;
     while (redoStackRef.current.length > 0) {
-      const entry = redoStackRef.current.pop()!;
+      const entry = redoStackRef.current[redoStackRef.current.length - 1];
       if (entry.type === 'delete-frame') {
-        const cur = framesRef.current;
-        if (cur.length <= 1 || !cur.some((f) => f.id === entry.frame.id)) continue;
-        setFrames((prev) => {
-          if (prev.length <= 1) return prev;
-          const idx = prev.findIndex((f) => f.id === entry.frame.id);
-          if (idx < 0) return prev;
-          const next = prev.filter((f) => f.id !== entry.frame.id);
-          setActiveFrameId((curId) => {
-            if (curId !== entry.frame.id) return curId;
-            const fallbackIdx = Math.min(idx, next.length - 1);
-            return next[fallbackIdx]?.id ?? null;
-          });
-          if (next.length <= 1) setIsPlaying(false);
-          return next;
-        });
-        undoStackRef.current.push(entry);
+        sealBatchHistory();
+        redoStackRef.current.pop();
+        const journal = readHistoryJournal();
+        if (journal.frames.length <= 1 || !journal.frames.some(f => f.id === entry.frame.id)) continue;
+        const index = journal.frames.findIndex(f => f.id === entry.frame.id);
+        const next = journal.frames.filter(f => f.id !== entry.frame.id);
+        publishHistoryJournal({...journal, frames:next, undo:[...journal.undo,entry]});
+        setActiveFrameId(curId => curId === entry.frame.id ? next[Math.min(index,next.length-1)]?.id ?? null : curId);
+        if (next.length <= 1) setIsPlaying(false);
         return true;
       }
-
-      const target = framesRef.current.find((f) => f.id === entry.frameId);
-      if (!target || target.historyIndex >= target.editHistory.length - 1) continue;
-      setFrames((prev) =>
-        prev.map((f) =>
-          f.id === entry.frameId && f.historyIndex < f.editHistory.length - 1
-            ? { ...f, historyIndex: f.historyIndex + 1 }
-            : f
-        )
-      );
-      setActiveFrameId(entry.frameId);
-      undoStackRef.current.push(entry);
-      return true;
+      const moved = movePixelEntry(readHistoryJournal(), entry, 'redo');
+      if (moved.status === 'applied') {
+        publishHistoryJournal(moved.journal);
+        if (entry.type === 'pixel-edit') setActiveFrameId(entry.frameId);
+        return true;
+      }
+      if (moved.status === 'blocked') {
+        setHistoryNotice(tRef.current('history.batchBlocked'));
+        return true;
+      }
+      redoStackRef.current.pop();
     }
-
-    if (activeFrame && activeFrame.historyIndex < activeFrame.editHistory.length - 1) {
-      handleRedo();
-      return true;
+    if (activeFrame) {
+      const moved = moveFramePixelHistory(readHistoryJournal(), activeFrame.id, 'redo');
+      if (moved.status === 'applied') { publishHistoryJournal(moved.journal); return true; }
+      if (moved.status === 'blocked') { setHistoryNotice(tRef.current('history.batchBlocked')); return true; }
     }
     return false;
-  }, [activeFrame, handleRedo, dismissPalettePreview]);
+  }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal, sealBatchHistory]);
 
   const handleAutoRemoveBg = useCallback(() => {
     if (!activeResult) return;
@@ -969,30 +985,23 @@ export default function App() {
   }, []);
 
   const handleDeleteFrame = useCallback((id: string) => {
+    if (framesRef.current.length <= 1 || !framesRef.current.some(f => f.id === id)) return;
+    sealBatchHistory();
     const currentFrames = framesRef.current;
     const removedIdx = currentFrames.findIndex((f) => f.id === id);
-    if (currentFrames.length <= 1 || removedIdx < 0) return;
     const removedFrame = currentFrames[removedIdx];
     // Removing a frame can also change the shared palette. Only warn if a
     // surviving frame still has manual edits to preserve.
     if (currentFrames.some((f) => f.id !== id && f.historyIndex > 0 && f.editHistory.length > 0)) {
       setHasPendingReconvert(true);
     }
-    pushUndoAction({ type: 'delete-frame', frame: removedFrame, index: removedIdx });
-    setFrames((prev) => {
-      if (prev.length <= 1) return prev;
-      const idx = prev.findIndex((f) => f.id === id);
-      if (idx < 0) return prev;
-      const next = prev.filter((f) => f.id !== id);
-      setActiveFrameId((curId) => {
-        if (curId !== id) return curId;
-        const fallbackIdx = Math.min(idx, next.length - 1);
-        return next[fallbackIdx]?.id ?? null;
-      });
-      if (next.length <= 1) setIsPlaying(false);
-      return next;
-    });
-  }, [pushUndoAction]);
+    const journal = readHistoryJournal();
+    const entry: UndoActionEntry = { type: 'delete-frame', frame: removedFrame, index: removedIdx };
+    const next = journal.frames.filter(f => f.id !== id);
+    publishHistoryJournal({frames:next, undo:[...journal.undo,entry].slice(-MAX_HISTORY), redo:[]});
+    setActiveFrameId(curId => curId === id ? next[Math.min(removedIdx,next.length-1)]?.id ?? null : curId);
+    if (next.length <= 1) setIsPlaying(false);
+  }, [sealBatchHistory, readHistoryJournal, publishHistoryJournal]);
 
   // Keyboard shortcuts for Edit Mode & Animate Mode
   useEffect(() => {
@@ -1065,12 +1074,13 @@ export default function App() {
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
+      sealBatchHistory();
       setConfig((prev) => ({ ...prev, ...patch }));
       if (anyFrameHasManualEdits) {
         setHasPendingReconvert(true);
       }
     },
-    [anyFrameHasManualEdits]
+    [anyFrameHasManualEdits, sealBatchHistory]
   );
 
   const handleSelectDimensions = useCallback(
@@ -1330,6 +1340,12 @@ export default function App() {
       </header>
 
       {/* Error banner if needed */}
+      {historyNotice && (
+        <div role="status" className="flex items-center justify-between gap-2 px-4 py-2 bg-amber-500/10 text-amber-200 text-xs">
+          <span>{historyNotice}</span>
+          <button type="button" onClick={() => setHistoryNotice(null)} aria-label={t('history.dismiss')}>×</button>
+        </div>
+      )}
       {errorMsg && (
         <div className="px-5 py-2 bg-rose-500/15 border-b border-rose-500/30 text-xs text-rose-200 flex items-center justify-between">
           <span>{errorMsg}</span>
@@ -1354,12 +1370,8 @@ export default function App() {
           config={config}
           viewMode={viewMode}
           editor={editor}
-          canUndo={Boolean(previewImageData || (activeFrame && activeFrame.historyIndex > 0))}
-          canRedo={Boolean(
-            activeFrame &&
-              activeFrame.historyIndex >= 0 &&
-              activeFrame.historyIndex < activeFrame.editHistory.length - 1
-          )}
+          canUndo={Boolean(previewImageData || canUndoActive)}
+          canRedo={canRedoActive}
           hasManualEdits={activeFrameHasManualEdits}
           editStepCount={activeFrame ? Math.max(0, activeFrame.historyIndex) : 0}
           hasPendingReconvert={hasPendingReconvert}
@@ -1426,8 +1438,8 @@ export default function App() {
           palettePreviewDisabled={viewMode === 'crop'}
           onPreviewColors={handlePreviewDocumentColors}
           onCancelPreview={cancelPalettePreview}
-          canUndo={Boolean(previewImageData || (activeFrame && activeFrame.historyIndex > 0))}
-          canRedo={Boolean(activeFrame && activeFrame.historyIndex >= 0 && activeFrame.historyIndex < activeFrame.editHistory.length - 1)}
+          canUndo={Boolean(previewImageData || canUndoActive)}
+          canRedo={canRedoActive}
           onReplaceColor={handleReplaceDocumentColor}
           onApplyColors={handleApplyDocumentColors}
           onUndo={handleUndo}

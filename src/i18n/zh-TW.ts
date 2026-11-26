@@ -219,6 +219,10 @@ export const zhTW = {
   'panel.copiedHex': '已選取 {hex}',
   'panel.clickToCopyHex': '點擊取色／複製',
 
+  'history.batchCheckpoint': "已封存 {count} 筆批次編輯歷史，目前畫面不變；封存的批次不可再復原／重做。",
+  'history.batchBlocked': "批次編輯必須一起復原或重做。請先處理其他參與影格較新的編輯，或依全域歷史順序操作。",
+  'history.dismiss': "關閉歷史提示",
+
   'documentPalette.title': "文件色盤",
   'documentPalette.hint': "點選要全域替換的顏色（目前影格）",
   'documentPalette.source': "原始顏色",

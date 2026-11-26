@@ -28,6 +28,8 @@ export interface PersistedFrameRecord {
   sourceBlob?: Blob;
   sampleSrc?: string;
   manualEdit?: PersistedImageBuffer;
+  /** Undo journal is session-only; a saved atomic result must not become a partial per-frame undo. */
+  manualEditCheckpoint?: boolean;
 }
 
 export interface PersistedWorkspaceSession {

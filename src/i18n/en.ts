@@ -229,6 +229,10 @@ export const en: TranslationDict = {
   'panel.copiedHex': 'Picked {hex}',
   'panel.clickToCopyHex': 'Click to pick / copy',
 
+  'history.batchCheckpoint': "Checkpointed {count} batch edit(s). Current pixels are unchanged; checkpointed batches can no longer be undone or redone.",
+  'history.batchBlocked': "Batch history must move together. Resolve newer edits on the other participating frames first, or use global history order.",
+  'history.dismiss': "Dismiss history notice",
+
   'documentPalette.title': "Document palette",
   'documentPalette.hint': "Select a color to replace across the current frame",
   'documentPalette.source': "Source color",
