@@ -1308,7 +1308,7 @@ export function CanvasViewport({
               className={`border border-[#333C4F] overflow-hidden relative touch-none cursor-crosshair ${backdropClass}`}
               style={{ width: dispW, height: dispH }}
             >
-              <canvas ref={pixelCanvasRef} className="w-full h-full block pixelated" />
+              <canvas ref={pixelCanvasRef} data-testid="pixel-edit-bitmap" className="w-full h-full block pixelated" />
               {showGrid && (
                 <PixelGridOverlay
                   width={dispW}
