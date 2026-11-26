@@ -1393,7 +1393,7 @@ export default function App() {
   );
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
+    <div className="h-screen h-dvh w-full overflow-hidden flex flex-col bg-[#0B0D11] text-[#F1F5F9]">
       {/* Top Navigation Bar */}
       <header className="h-13 px-2 sm:px-5 border-b border-[#222733] bg-[#0F1218] grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 sm:gap-6 shrink-0">
         {/* Zone 1: Single-line Brand Wordmark */}
