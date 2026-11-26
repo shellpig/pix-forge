@@ -221,6 +221,10 @@ export const ja: TranslationDict = {
   'panel.copiedHex': '{hex} を選択',
   'panel.clickToCopyHex': 'クリックで色取得・コピー',
 
+  'history.batchCheckpoint': "{count} 件の一括編集履歴を確定しました。現在の画像は変わりませんが、確定した履歴は元に戻せません。",
+  'history.batchBlocked': "一括編集は全フレームを同時に元に戻す必要があります。他の参加フレームの新しい編集を先に処理してください。",
+  'history.dismiss': "履歴通知を閉じる",
+
   'documentPalette.title': "ドキュメントパレット",
   'documentPalette.hint': "現在のフレーム全体で置換する色を選択",
   'documentPalette.source': "元の色",
