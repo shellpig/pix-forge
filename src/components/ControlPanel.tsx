@@ -12,6 +12,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { DocumentPalette } from './DocumentPalette';
+import type { CanvasSourcePickMode, CanvasSourcePickEvent } from '../lib/canvasSourcePick';
 import type { PaletteScope, SequencePalette } from '../lib/sequencePalette';
 import type { BatchBlockReason } from '../lib/batchHistory';
 import { PRESET_PALETTES } from '../lib/palettes';
@@ -61,6 +62,13 @@ interface ControlPanelProps {
   canRedoSequence: boolean;
   onUndoSequence: () => void;
   onRedoSequence: () => void;
+  canvasSourcePickMode: CanvasSourcePickMode | null;
+  canvasPickEvent: CanvasSourcePickEvent | null;
+  onConsumeCanvasPickEvent: (event:CanvasSourcePickEvent)=>void;
+  onStartCanvasSourcePick: (mode:CanvasSourcePickMode)=>void;
+  onStopCanvasSourcePick: ()=>void;
+  onFinishCanvasSourcePick: ()=>void;
+  canvasSourcePickDisabled: boolean;
   palettePreviewActive: boolean;
   paletteDraftResetVersion: number;
   palettePreviewDisabled: boolean;
@@ -126,6 +134,8 @@ export function ControlPanel({
   paletteScope, onChangePaletteScope, sequencePalette, sequenceBlockReason,
   sequenceFrameNames, onPreviewSequenceColors, onApplySequenceColors,
   canUndoSequence, canRedoSequence, onUndoSequence, onRedoSequence,
+  canvasSourcePickMode, canvasPickEvent, onConsumeCanvasPickEvent, onStartCanvasSourcePick,
+  onStopCanvasSourcePick, onFinishCanvasSourcePick, canvasSourcePickDisabled,
   palettePreviewActive,
   paletteDraftResetVersion,
   palettePreviewDisabled,
@@ -663,6 +673,13 @@ export function ControlPanel({
               sequenceBlockReason={paletteScope === 'sequence' ? sequenceBlockReason : null}
               onApplySequenceColors={onApplySequenceColors}
               disabled={paletteEditingDisabled || (paletteScope === 'sequence' && !!sequenceBlockReason)}
+              canvasSourcePickMode={canvasSourcePickMode}
+              canvasPickEvent={canvasPickEvent}
+              onConsumeCanvasPickEvent={onConsumeCanvasPickEvent}
+              onStartCanvasSourcePick={onStartCanvasSourcePick}
+              onStopCanvasSourcePick={onStopCanvasSourcePick}
+              onFinishCanvasSourcePick={onFinishCanvasSourcePick}
+              canvasSourcePickDisabled={canvasSourcePickDisabled}
               previewActive={palettePreviewActive}
               draftResetVersion={paletteDraftResetVersion}
               previewDisabled={palettePreviewDisabled}
