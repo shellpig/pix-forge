@@ -7,6 +7,7 @@ on:
       - feat/document-palette-phase-2c
       - feat/document-palette-phase-3a
       - feat/document-palette-phase-3b
+      - feat/document-palette-phase-4a
   pull_request:
     branches:
       - main

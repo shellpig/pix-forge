@@ -116,8 +116,9 @@ test('preview cancellation consumes undo and redo before modifying either histor
     assert.match(body, /=> \{\s*if \(dismissPalettePreview\(\)\) return(?: true)?;/);
   }
   const start = app.indexOf('const dismissPalettePreview =');
-  const body = app.slice(start, app.indexOf('}, [previewImageData]);', start));
-  assert.match(body, /if \(!previewImageData\) return false;/);
+  const body = app.slice(start, app.indexOf('}, [previewImageData, activeCanvasPick, stopCanvasSourcePick]);', start));
+  assert.match(body, /if \(!previewImageData && !activeCanvasPick\) return false;/);
+  assert.match(body, /stopCanvasSourcePick\(\)/);
   assert.match(body, /setPalettePreview\(null\)/);
   assert.match(body, /setPaletteDraftResetVersion\(version => version \+ 1\)/);
   assert.doesNotMatch(body, /setFrames\(|undoStackRef|redoStackRef|handleCommitImageData/);
@@ -215,4 +216,29 @@ test('sequence scope keeps the document palette mounted across active-frame chan
   assert.match(app,/const timelineFrames:[\s\S]*?imageData: getEffectiveFrameImageData\(f\)/);
   assert.match(app,/onUndoSequence=\{handleGlobalUndo\}/);
   assert.match(app,/onRedoSequence=\{handleGlobalRedo\}/);
+});
+
+test('canvas source picking is isolated from brush editing and routes committed RGB to palette selection',()=>{
+  const panel=readFileSync('src/components/ControlPanel.tsx','utf8');
+  const doc=readFileSync('src/components/DocumentPalette.tsx','utf8');
+  const start=viewport.indexOf('const handleEditPointerDown =');
+  const end=viewport.indexOf('const effectiveTool =',start);
+  const pointer=viewport.slice(start,end);
+  assert.match(pointer,/if \(canvasSourcePickMode\) \{/);
+  const pick=pointer.slice(pointer.indexOf('if (canvasSourcePickMode)'),pointer.indexOf('if (e.button !== 0 && e.button !== 2)'));
+  assert.match(pick,/readCanvasSourceColor\(result.imageData,coords.x,coords.y\)/);
+  assert.match(pick,/if \(hex\) onCanvasSourceColor\(hex\);\s*return;/);
+  assert.doesNotMatch(pick,/onUpdateEditor|onCommitImageData|drawBrushStroke/);
+  assert.match(pointer,/editor.tool === 'eyedropper'/);
+  assert.match(viewport,/pixelCanvasRef.current\?\.getBoundingClientRect\(\)/);
+  assert.match(app,/canvasSourcePick.frames === frames/);
+  assert.match(app,/paletteScope === 'sequence' \? !sequenceBlockReason : canvasSourcePick.frameId === activeFrame.id/);
+  assert.match(app,/if \(activeCanvasPick.mode === 'single'\) setCanvasSourcePick\(null\)/);
+  assert.match(app,/onCanvasSourceColor=\{handleCanvasSourceColor\}/);
+  assert.match(panel,/canvasPickEvent=\{canvasPickEvent\}/);
+  assert.match(doc,/selectCanvasSourceColor\(mode,activeSelected,draft,hex\)/);
+  assert.match(doc,/setSearch\(''\);\s*setPage\(Math.floor\(colors.findIndex\(c=>c.hex===hex\)\/PAGE_SIZE\)\)/);
+  assert.match(doc,/!canvasSourcePickMode && mapping.size>0/);
+  assert.match(doc,/if \(canvasPickEvent.type === 'finish'\) \{\s*showPreview\(mapping\)/);
+  assert.match(doc,/!canvasSourcePickMode && !previewDisabled/);
 });

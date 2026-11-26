@@ -21,6 +21,7 @@ import {
   runBatchPixelConversion,
 } from './lib/pixelEngine';
 import { createDocumentColorPreview } from './lib/documentPalette';
+import type { CanvasSourcePickMode, CanvasSourcePickEvent } from './lib/canvasSourcePick';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
   applyFrameConversion,
@@ -80,6 +81,15 @@ interface SequencePreviewSession {
   config: PixelEngineConfig;
   viewMode: ViewMode;
   mapping: ReadonlyMap<string,string>;
+}
+
+interface CanvasSourcePickSession {
+  mode: CanvasSourcePickMode;
+  scope: PaletteScope;
+  frames: AnimationFrameItem[];
+  frameId: string;
+  config: PixelEngineConfig;
+  pendingReconvert: boolean;
 }
 
 type UndoActionEntry = HistoryEntry<AnimationFrameItem>;
@@ -166,6 +176,8 @@ export default function App() {
   const [requestedPaletteScope, setRequestedPaletteScope] = useState<PaletteScope>('frame');
   const paletteScope = frames.length > 1 ? requestedPaletteScope : 'frame';
   const [paletteDraftResetVersion, setPaletteDraftResetVersion] = useState(0);
+  const [canvasSourcePick, setCanvasSourcePick] = useState<CanvasSourcePickSession | null>(null);
+  const [canvasPickEvent, setCanvasPickEvent] = useState<CanvasSourcePickEvent | null>(null);
   const previewShortcutConsumedRef = useRef(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
@@ -274,6 +286,19 @@ export default function App() {
     isPlaying, isConversionPending: isConversionPending || conversionFailed,
     isBatchProcessing, hasPendingReconvert, hasPreview: false,
   });
+  const activeCanvasPick = canvasSourcePick && activeResult && activeFrame &&
+    canvasSourcePick.scope === paletteScope && canvasSourcePick.frames === frames &&
+    canvasSourcePick.config === config && canvasSourcePick.pendingReconvert === hasPendingReconvert &&
+    (paletteScope === 'sequence' ? !sequenceBlockReason : canvasSourcePick.frameId === activeFrame.id) &&
+    viewMode === 'edit' && !isPlaying && !isConversionPending && !isBatchProcessing && !conversionFailed
+    ? canvasSourcePick : null;
+  useEffect(() => {
+    if (canvasSourcePick && !activeCanvasPick) {
+      setCanvasSourcePick(null);
+      setCanvasPickEvent(null);
+      setPaletteDraftResetVersion(version => version + 1);
+    }
+  }, [canvasSourcePick, activeCanvasPick]);
   const sequencePalette = useMemo(() => paletteScope === 'sequence' ? collectSequencePalette(frames) : null, [paletteScope, frames]);
   const validSequencePreview = sequencePreview && paletteScope === 'sequence' &&
     sequencePreview.frames === frames && sequencePreview.config === config &&
@@ -311,19 +336,50 @@ export default function App() {
   }, []);
   const handleChangePaletteScope = useCallback((scope: PaletteScope) => {
     cancelPalettePreview();
+    setCanvasSourcePick(null);
+    setCanvasPickEvent(null);
     setPaletteDraftResetVersion(version => version + 1);
     setRequestedPaletteScope(scope);
   }, [cancelPalettePreview]);
 
+  const startCanvasSourcePick = useCallback((mode: CanvasSourcePickMode) => {
+    if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing ||
+        conversionFailed || (paletteScope === 'sequence' && sequenceBlockReason)) return;
+    cancelPalettePreview();
+    setCanvasPickEvent(null);
+    setCanvasSourcePick({mode,scope:paletteScope,frames,frameId:activeFrame.id,config,pendingReconvert:hasPendingReconvert});
+    setViewMode('edit');
+  }, [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing,
+    conversionFailed, paletteScope, sequenceBlockReason, frames, config, hasPendingReconvert, cancelPalettePreview]);
+
+  const stopCanvasSourcePick = useCallback(() => {
+    setCanvasSourcePick(null);
+    setCanvasPickEvent(null);
+  }, []);
+  const consumeCanvasPickEvent = useCallback((event: CanvasSourcePickEvent) => {
+    setCanvasPickEvent(current => current === event ? null : current);
+  }, []);
+  const finishCanvasSourcePick = useCallback(() => {
+    if (!activeCanvasPick) return;
+    setCanvasSourcePick(null);
+    setCanvasPickEvent({type:'finish'});
+  }, [activeCanvasPick]);
+  const handleCanvasSourceColor = useCallback((hex: string) => {
+    if (!activeCanvasPick || activeCanvasPick.frames !== framesRef.current) return;
+    setCanvasPickEvent({type:'color',hex,mode:activeCanvasPick.mode});
+    if (activeCanvasPick.mode === 'single') setCanvasSourcePick(null);
+  }, [activeCanvasPick]);
+
   // Explicit cancellation discards the draft as well as its rendered preview.
   // Returning true consumes a history action without touching either stack.
   const dismissPalettePreview = useCallback((): boolean => {
-    if (!previewImageData) return false;
+    if (!previewImageData && !activeCanvasPick) return false;
+    stopCanvasSourcePick();
     setPalettePreview(null);
     setSequencePreview(null);
     setPaletteDraftResetVersion(version => version + 1);
     return true;
-  }, [previewImageData]);
+  }, [previewImageData, activeCanvasPick, stopCanvasSourcePick]);
 
   const timelineFrames: TimelineFramePreview[] = useMemo(
     () =>
@@ -818,14 +874,14 @@ export default function App() {
   // Commit edited pixel frame onto the active frame's Undo/Redo stack
   const handleCommitImageData = useCallback(
     (next: ImageData) => {
-      if (!activeFrame || !activeFrame.convertedResult || validSequencePreview) return;
+      if (!activeFrame || !activeFrame.convertedResult || validSequencePreview || activeCanvasPick) return;
       const committed = commitSinglePixelEdit(readHistoryJournal(), activeFrame.id, next);
       if (!committed) return;
       setPalettePreview(null);
       publishHistoryJournal(committed.journal);
       notifyBatchRetirement(committed.retired);
     },
-    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement, validSequencePreview]
+    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement, validSequencePreview, activeCanvasPick]
   );
 
   // Every preview starts from the effective committed frame, never from an
@@ -856,13 +912,13 @@ export default function App() {
   // baseline so no stale or cumulative preview data can enter history.
   const handleApplyDocumentColors = useCallback(
     (mapping: ReadonlyMap<string, string>): boolean => {
-      if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing) return false;
+      if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing || activeCanvasPick) return false;
       const next = createDocumentColorPreview(activeResult.imageData.data, mapping);
       if (!next) return false;
       handleCommitImageData(new ImageData(new Uint8ClampedArray(next.data), activeResult.width, activeResult.height));
       return true;
     },
-    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing, handleCommitImageData]
+    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing, handleCommitImageData, activeCanvasPick]
   );
 
   const handleReplaceDocumentColor = useCallback(
@@ -887,8 +943,8 @@ export default function App() {
       isPlaying, isConversionPending: isConversionPending || conversionFailed,
       isBatchProcessing, hasPendingReconvert,
       // Only this exact, still-current sequence draft can be explicitly applied.
-      hasPreview: previewImageData !== null && !(validSequencePreview &&
-        validSequencePreview.frames === framesRef.current && equalPaletteMappings(validSequencePreview.mapping,mapping)),
+      hasPreview: !!activeCanvasPick || (previewImageData !== null && !(validSequencePreview &&
+        validSequencePreview.frames === framesRef.current && equalPaletteMappings(validSequencePreview.mapping,mapping))),
     }, globalThis.crypto?.randomUUID?.() ?? makeFrameId());
     if (committed.ok) {
       cancelPalettePreview();
@@ -897,7 +953,7 @@ export default function App() {
     }
     return committed;
   }, [readHistoryJournal, isPlaying, isConversionPending, conversionFailed, isBatchProcessing,
-    hasPendingReconvert, previewImageData, validSequencePreview, publishHistoryJournal, notifyBatchRetirement, cancelPalettePreview]);
+    hasPendingReconvert, previewImageData, validSequencePreview, activeCanvasPick, publishHistoryJournal, notifyBatchRetirement, cancelPalettePreview]);
 
   const handleApplySequencePalette = useCallback((mapping: ReadonlyMap<string,string>): BatchBlockReason | null => {
     const result = handleApplySequenceColors(mapping);
@@ -993,13 +1049,13 @@ export default function App() {
   }, [activeFrame, dismissPalettePreview, readHistoryJournal, publishHistoryJournal, sealBatchHistory]);
 
   const handleAutoRemoveBg = useCallback(() => {
-    if (!activeResult || previewImageData) return;
+    if (!activeResult || previewImageData || activeCanvasPick) return;
     const next = cloneImageData(activeResult.imageData);
     const removed = autoRemoveCornerBackground(next, Math.max(12, editor.tolerance));
     if (removed > 0) {
       handleCommitImageData(next);
     }
-  }, [activeResult, editor.tolerance, handleCommitImageData, previewImageData]);
+  }, [activeResult, editor.tolerance, handleCommitImageData, previewImageData, activeCanvasPick]);
 
   // Timeline actions
   const handleStepFrame = useCallback((delta: -1 | 1) => {
@@ -1120,6 +1176,7 @@ export default function App() {
 
       if (viewMode !== 'edit' || mod || e.altKey) return;
       const k = e.key.toLowerCase();
+      if (activeCanvasPick && ['b','e','i','g','w'].includes(k)) dismissPalettePreview();
       if (k === 'b') setEditor((p) => ({ ...p, tool: 'pencil' }));
       else if (k === 'e') setEditor((p) => ({ ...p, tool: 'eraser' }));
       else if (k === 'i') setEditor((p) => ({ ...p, tool: 'eyedropper' }));
@@ -1128,7 +1185,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame, dismissPalettePreview]);
+  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame, dismissPalettePreview, activeCanvasPick]);
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
@@ -1425,11 +1482,14 @@ export default function App() {
           result={activeResult}
           previewImageData={previewImageData}
           sequencePreviewActive={Boolean(validSequencePreview)}
+          canvasSourcePickMode={activeCanvasPick?.mode ?? null}
+          onCanvasSourceColor={handleCanvasSourceColor}
+          onFinishCanvasSourcePick={finishCanvasSourcePick}
           onCancelPalettePreview={dismissPalettePreview}
           config={config}
           viewMode={viewMode}
           editor={editor}
-          canUndo={Boolean(previewImageData || canUndoActive)}
+          canUndo={Boolean(previewImageData || activeCanvasPick || canUndoActive)}
           canRedo={canRedoActive}
           hasManualEdits={activeFrameHasManualEdits}
           editStepCount={activeFrame ? Math.max(0, activeFrame.historyIndex) : 0}
@@ -1448,7 +1508,10 @@ export default function App() {
           onDeleteFrame={handleDeleteFrame}
           onUploadFiles={handleUploadFiles}
           onOpenUpload={() => fileInputRef.current?.click()}
-          onUpdateEditor={(patch) => setEditor((p) => ({ ...p, ...patch }))}
+          onUpdateEditor={(patch) => {
+            if (activeCanvasPick && patch.tool) dismissPalettePreview();
+            setEditor((p) => ({ ...p, ...patch }));
+          }}
           onCommitImageData={handleCommitImageData}
           onUndo={handleUndo}
           onRedo={handleRedo}
@@ -1499,16 +1562,23 @@ export default function App() {
            sequenceFrameNames={frames.map((f,index)=>({id:f.id,name:f.name,index:index+1}))}
            onPreviewSequenceColors={handlePreviewSequenceColors}
            onApplySequenceColors={handleApplySequencePalette}
-           canUndoSequence={Boolean(previewImageData || undoStackRef.current.length || canUndoActive)}
+           canUndoSequence={Boolean(previewImageData || activeCanvasPick || undoStackRef.current.length || canUndoActive)}
            canRedoSequence={Boolean(redoStackRef.current.length || canRedoActive)}
            onUndoSequence={handleGlobalUndo}
            onRedoSequence={handleGlobalRedo}
-          palettePreviewActive={previewImageData !== null}
+          canvasSourcePickMode={activeCanvasPick?.mode ?? null}
+           canvasPickEvent={canvasPickEvent}
+           onConsumeCanvasPickEvent={consumeCanvasPickEvent}
+           onStartCanvasSourcePick={startCanvasSourcePick}
+           onStopCanvasSourcePick={stopCanvasSourcePick}
+           onFinishCanvasSourcePick={finishCanvasSourcePick}
+           canvasSourcePickDisabled={conversionFailed}
+           palettePreviewActive={previewImageData !== null}
           paletteDraftResetVersion={paletteDraftResetVersion}
           palettePreviewDisabled={viewMode === 'crop'}
           onPreviewColors={handlePreviewDocumentColors}
           onCancelPreview={cancelPalettePreview}
-          canUndo={Boolean(previewImageData || canUndoActive)}
+          canUndo={Boolean(previewImageData || activeCanvasPick || canUndoActive)}
           canRedo={canRedoActive}
           onReplaceColor={handleReplaceDocumentColor}
           onApplyColors={handleApplyDocumentColors}

@@ -247,6 +247,12 @@ export const ja: TranslationDict = {
   'sequencePalette.block.no-change': "変更対象のピクセルがありません。",
   'sequencePalette.block.memory-budget': "64 MiB の一括履歴容量を超えます。対象範囲または解像度を減らしてください。",
 
+  'documentPalette.canvasPick': "キャンバスから色を選択",
+  'documentPalette.canvasPickDone': "色選択を完了",
+  'documentPalette.canvasPickCancel': "色選択をキャンセル",
+  'documentPalette.canvasPickManualHint': "キャンバスで複数の元の色を選択します。全フレームでは切り替え可能です。完了してプレビュー、Esc でキャンセル。",
+  'documentPalette.canvasPickSingleHint': "キャンバスで置換する元の色を選択します。Esc でキャンセル。",
+  'documentPalette.canvasPickShortHint': "ピクセルを変更せずに元の色を選択します。",
   'documentPalette.title': "ドキュメントパレット",
   'documentPalette.hint': "現在のフレーム全体で置換する色を選択",
   'documentPalette.source': "元の色",

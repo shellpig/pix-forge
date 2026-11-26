@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { selectCanvasSourceColor, type CanvasSourcePickMode, type CanvasSourcePickEvent } from '../lib/canvasSourcePick';
 import { Check, Copy, Pipette, Undo2, Redo2 } from 'lucide-react';
 import { useI18n, type TranslationKey } from '../i18n';
 import { collectDocumentColors, normalizeDocumentHex } from '../lib/documentPalette';
@@ -18,6 +19,13 @@ interface Props {
   canRedo: boolean;
   onReplaceColor: (source: string, target: string) => boolean;
   onApplyColors: (mapping: ReadonlyMap<string,string>) => boolean;
+  canvasSourcePickMode: CanvasSourcePickMode | null;
+  canvasPickEvent: CanvasSourcePickEvent | null;
+  onConsumeCanvasPickEvent: (event:CanvasSourcePickEvent)=>void;
+  onStartCanvasSourcePick: (mode:CanvasSourcePickMode)=>void;
+  onStopCanvasSourcePick: ()=>void;
+  onFinishCanvasSourcePick: ()=>void;
+  canvasSourcePickDisabled: boolean;
   previewActive: boolean;
   draftResetVersion: number;
   previewDisabled: boolean;
@@ -38,7 +46,7 @@ const MODES: {id:Mode; label:TranslationKey}[] = [
 const secondary = 'w-full rounded border border-[#2A3142] px-2 py-1 text-xs text-[#CBD5E1] disabled:opacity-40';
 const primary = 'w-full rounded bg-sky-600 hover:bg-sky-500 text-white py-1.5 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed';
 
-export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames, sequenceBlockReason, onApplySequenceColors, disabled, canUndo, canRedo, onReplaceColor, onApplyColors, previewActive, draftResetVersion, previewDisabled, onPreviewColors, onCancelPreview, onPickColor, onUndo, onRedo }: Props) {
+export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames, sequenceBlockReason, onApplySequenceColors, disabled, canUndo, canRedo, onReplaceColor, onApplyColors, canvasSourcePickMode, canvasPickEvent, onConsumeCanvasPickEvent, onStartCanvasSourcePick, onStopCanvasSourcePick, onFinishCanvasSourcePick, canvasSourcePickDisabled, previewActive, draftResetVersion, previewDisabled, onPreviewColors, onCancelPreview, onPickColor, onUndo, onRedo }: Props) {
   const { t } = useI18n();
   const isSequence = sequencePalette !== null;
   const colors = useMemo(() => sequencePalette?.colors ?? collectDocumentColors(imageData.data), [sequencePalette, imageData]);
@@ -59,6 +67,9 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
   const [lastImage, setLastImage] = useState(paletteIdentity);
   const [batchError, setBatchError] = useState<BatchBlockReason | null>(null);
   const [detailHex, setDetailHex] = useState<string | null>(null);
+  const [revealHex,setRevealHex] = useState<string|null>(null);
+  const paletteRootRef = useRef<HTMLDivElement>(null);
+  const lastPickEvent = useRef<CanvasSourcePickEvent|null>(null);
   const [lastDraftResetVersion, setLastDraftResetVersion] = useState(draftResetVersion);
 
   // Reset transaction-local choices after external committed-image changes.
@@ -76,10 +87,12 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     setCopyStatus(null);
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
   } else if (lastImage !== paletteIdentity) {
     setLastImage(paletteIdentity);
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
     setSelected(prev=>prev.filter(c=>colorSet.has(c)));
     setChooseTarget(false);
     setOverrides(new Map());
@@ -104,7 +117,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
   const mapping = mode==='auto' ? createAutoMergeMapping(groups,overrides) : manualMapping(activeSelected,draft);
   const sequenceStats = useMemo(()=>sequencePalette ? getSequenceMappingStats(sequencePalette,mapping) : null,[sequencePalette,mapping]);
   const overBudget = !!sequenceStats && sequenceStats.bytes > MAX_BATCH_HISTORY_BYTES;
-  const canApply = !disabled && mapping.size>0 && !overBudget && (!sequenceStats || sequenceStats.changedPixels > 0);
+  const canApply = !disabled && !canvasSourcePickMode && mapping.size>0 && !overBudget && (!sequenceStats || sequenceStats.changedPixels > 0);
   const detail = detailHex ? sequenceColors.get(detailHex) : undefined;
   const stats = useMemo(()=>{
     let changed=0;
@@ -119,9 +132,38 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
 
   const showPreview = (next:ReadonlyMap<string,string>, enabled=livePreview) => {
     setBatchError(null);
-    if(enabled && !previewDisabled && !disabled && next.size) onPreviewColors(next);
+    if(enabled && !canvasSourcePickMode && !previewDisabled && !disabled && next.size) onPreviewColors(next);
     else onCancelPreview();
   };
+  useEffect(() => {
+    if (!canvasPickEvent || lastPickEvent.current === canvasPickEvent) return;
+    lastPickEvent.current = canvasPickEvent;
+    if (canvasPickEvent.type === 'finish') {
+      showPreview(mapping);
+    } else if (!disabled && mode === canvasPickEvent.mode && colorSet.has(canvasPickEvent.hex)) {
+      const hex = canvasPickEvent.hex;
+      const next = selectCanvasSourceColor(mode,activeSelected,draft,hex);
+      setSelected(next.selected);
+      setDraft(next.draft);
+      setSearch('');
+      setPage(Math.floor(colors.findIndex(c=>c.hex===hex)/PAGE_SIZE));
+      setChooseTarget(false);
+      setCopyStatus(null);
+      setBatchError(null);
+      if (isSequence) setDetailHex(hex);
+      setRevealHex(hex);
+    }
+    onConsumeCanvasPickEvent(canvasPickEvent);
+  }, [canvasPickEvent, disabled, mode, colorSet, activeSelected, draft, colors, isSequence, mapping, onConsumeCanvasPickEvent]);
+
+  useEffect(() => {
+    if (!revealHex) return;
+    // Do not pull a phone user away from the canvas mid multi-pick.
+    if (canvasSourcePickMode && window.matchMedia('(max-width: 767px)').matches) return;
+    paletteRootRef.current?.querySelector('[data-palette-hex="'+revealHex+'"]')?.scrollIntoView({block:'nearest',inline:'nearest'});
+    setRevealHex(null);
+  }, [revealHex,currentPage,canvasSourcePickMode]);
+
   const updateDraft = (value:string) => {
     setDraft(value);
     setChooseTarget(false);
@@ -129,6 +171,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
   };
   const switchMode = (next:Mode) => {
     if(next===mode) return;
+    onStopCanvasSourcePick();
     onCancelPreview();
     setMode(next);
     setSelected([]);
@@ -169,9 +212,11 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     showPreview(createAutoMergeMapping(groups,next));
   };
   const cancel = () => {
+    onStopCanvasSourcePick();
     onCancelPreview();
     setBatchError(null);
     setDetailHex(null);
+    setRevealHex(null);
     setChooseTarget(false);
     setOverrides(new Map());
     setTolerance(0);
@@ -205,7 +250,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
   };
 
   return (
-    <div className="pt-2 space-y-2 border-t border-[#252B39]">
+    <div ref={paletteRootRef} className="pt-2 space-y-2 border-t border-[#252B39]">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold text-[#E2E8F0]">{t(isSequence?'sequencePalette.title':'documentPalette.title')} ({colors.length})</h3>
         <div className="flex gap-1">
@@ -224,13 +269,19 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
       <p className="text-[11px] text-[#94A3B8]">{t(mode==='single'?(isSequence?'sequencePalette.singleHint':'documentPalette.hint'):mode==='manual'?'documentPalette.manualHint':'documentPalette.autoHint')}</p>
 
       {mode!=='auto' && <>
+        <button type="button" aria-pressed={!!canvasSourcePickMode}
+          disabled={disabled || canvasSourcePickDisabled}
+          onClick={()=>{if(canvasSourcePickMode) onFinishCanvasSourcePick(); else {setChooseTarget(false);onStartCanvasSourcePick(mode);}}}
+          className={secondary+' flex items-center justify-center gap-1 '+(canvasSourcePickMode?'border-sky-400 text-sky-300':'')}>
+          <Pipette size={14}/>{t(canvasSourcePickMode?'documentPalette.canvasPickDone':'documentPalette.canvasPick')}
+        </button>
         {(colors.length>PAGE_SIZE || search.length>0) && <input aria-label={t('documentPalette.search')} placeholder={t('documentPalette.search')} value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} className="w-full bg-[#0D1017] rounded border border-[#2A3142] px-2 py-1 text-xs font-mono"/>}
         {chooseTarget && <p className="text-[11px] text-sky-300">{t('documentPalette.chooseTargetHint')}</p>}
         {isSequence ? <div className="space-y-1 max-h-64 overflow-y-auto studio-scroll">
           {visible.map(c=>{
             const color = sequenceColors.get(c.hex)!;
             return <div key={c.hex} className="flex items-center gap-1">
-              <button type="button" disabled={disabled} aria-pressed={activeSelected.includes(c.hex)}
+              <button type="button" data-palette-hex={c.hex} disabled={disabled} aria-pressed={activeSelected.includes(c.hex)}
                 onClick={()=>{selectSwatch(c.hex);setDetailHex(c.hex);}}
                 className={'flex-1 min-w-0 flex items-center gap-2 rounded px-1 py-1 text-[11px] border '+(activeSelected.includes(c.hex)?'border-sky-400 bg-sky-500/10':'border-transparent hover:bg-[#252B39]')}>
                 <span className="w-5 h-5 shrink-0 rounded border border-white/20" style={{backgroundColor:c.hex}}/>
@@ -244,7 +295,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
             </div>;
           })}
         </div> : <div className="grid grid-cols-8 gap-1">
-          {visible.map(c=><button key={c.hex} type="button" disabled={disabled} aria-label={c.hex+' ('+c.count+' '+t('documentPalette.pixels')+')'} aria-pressed={activeSelected.includes(c.hex)} title={c.hex+' · '+c.count+' '+t('documentPalette.pixels')} onClick={()=>selectSwatch(c.hex)} className={'h-6 rounded border cursor-pointer disabled:opacity-40 '+(activeSelected.includes(c.hex)?'ring-2 ring-sky-400 border-white':'border-white/15 hover:border-white')} style={{backgroundColor:c.hex}}/>)}
+          {visible.map(c=><button key={c.hex} type="button" data-palette-hex={c.hex} disabled={disabled} aria-label={c.hex+' ('+c.count+' '+t('documentPalette.pixels')+')'} aria-pressed={activeSelected.includes(c.hex)} title={c.hex+' · '+c.count+' '+t('documentPalette.pixels')} onClick={()=>selectSwatch(c.hex)} className={'h-6 rounded border cursor-pointer disabled:opacity-40 '+(activeSelected.includes(c.hex)?'ring-2 ring-sky-400 border-white':'border-white/15 hover:border-white')} style={{backgroundColor:c.hex}}/>)}
         </div>}
         {detail && <div className="rounded border border-[#2A3142] p-2 text-[11px] space-y-1">
           <p className="font-mono">{detail.hex} · {t('sequencePalette.colorFrames',{count:detail.frameCount,total:sequencePalette!.frameCount})}</p>
@@ -273,7 +324,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
           {source && copyStatus && copyStatus.hex===source && <p role="status" className="text-[11px] text-[#94A3B8]">{t(copyStatus.ok?'documentPalette.copied':'documentPalette.failed')}</p>}
           <p className="text-xs text-[#CBD5E1]">{t('documentPalette.target')}</p>
           <ColorPicker key={mode} value={draft} onChange={updateDraft} onEnter={apply} disabled={disabled}/>
-          <button type="button" disabled={disabled} aria-pressed={chooseTarget} onClick={()=>setChooseTarget(v=>!v)} className={secondary+(chooseTarget?' ring-1 ring-sky-400':'')}>{t('documentPalette.existing')}</button>
+          <button type="button" disabled={disabled || !!canvasSourcePickMode} aria-pressed={chooseTarget} onClick={()=>setChooseTarget(v=>!v)} className={secondary+(chooseTarget?' ring-1 ring-sky-400':'')}>{t('documentPalette.existing')}</button>
         </div>}
       </>}
 
@@ -318,7 +369,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
         {overBudget && <p role="status" className="text-xs text-amber-300">{t('sequencePalette.block.memory-budget')}</p>}
         {batchError && <p role="alert" className="text-xs text-amber-300">{t(`sequencePalette.block.${batchError}`)}</p>}
         <label className="flex items-center gap-2 text-xs text-[#CBD5E1]">
-          <input type="checkbox" checked={livePreview && !previewDisabled} disabled={disabled || previewDisabled} onChange={e=>{setLivePreview(e.target.checked);showPreview(mapping,e.target.checked);}}/>
+          <input type="checkbox" checked={livePreview && !previewDisabled} disabled={disabled || previewDisabled || !!canvasSourcePickMode} onChange={e=>{setLivePreview(e.target.checked);showPreview(mapping,e.target.checked);}}/>
           {t('documentPalette.livePreview')}
         </label>
         <button type="button" disabled={!canApply} onClick={apply} className={primary}>{t(isSequence?'sequencePalette.applyAll':mode==='single'?'documentPalette.apply':'documentPalette.mergeApply')}</button>
