@@ -1176,6 +1176,7 @@ export default function App() {
 
       if (viewMode !== 'edit' || mod || e.altKey) return;
       const k = e.key.toLowerCase();
+      if (activeCanvasPick && ['b','e','i','g','w'].includes(k)) dismissPalettePreview();
       if (k === 'b') setEditor((p) => ({ ...p, tool: 'pencil' }));
       else if (k === 'e') setEditor((p) => ({ ...p, tool: 'eraser' }));
       else if (k === 'i') setEditor((p) => ({ ...p, tool: 'eyedropper' }));
@@ -1184,7 +1185,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame, dismissPalettePreview]);
+  }, [viewMode, handleGlobalUndo, handleGlobalRedo, handleStepFrame, dismissPalettePreview, activeCanvasPick]);
 
   const handleUpdateConfig = useCallback(
     (patch: Partial<PixelEngineConfig>) => {
