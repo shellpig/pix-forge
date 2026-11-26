@@ -245,6 +245,12 @@ export const zhTW = {
   'sequencePalette.block.no-change': "沒有符合的像素需要修改。",
   'sequencePalette.block.memory-budget': "本次操作超過 64 MiB 批次歷史預算，請縮小操作範圍或降低解析度。",
 
+  'documentPalette.canvasPick': "從畫布選色",
+  'documentPalette.canvasPickDone': "完成選色",
+  'documentPalette.canvasPickCancel': "取消選色",
+  'documentPalette.canvasPickManualHint': "點選畫布上的多個來源色，可切換影格（全動畫）。完成選色後預覽，Esc 可取消。",
+  'documentPalette.canvasPickSingleHint': "點選畫布上要替換的來源色。Esc 可取消。",
+  'documentPalette.canvasPickShortHint': "點選來源色，不修改像素。",
   'documentPalette.title': "文件色盤",
   'documentPalette.hint': "點選要全域替換的顏色（目前影格）",
   'documentPalette.source': "原始顏色",
