@@ -10,11 +10,12 @@ interface Props {
   onChange: (value: string) => void;
   disabled?: boolean;
   onEnter?: () => void;
+  layout?: 'vertical' | 'compact';
 }
 
 /** Controlled color editor. Callers choose whether a change affects the brush
  * or an isolated document preview. It never commits document history. */
-export function ColorPicker({ value, onChange, disabled = false, onEnter }: Props) {
+export function ColorPicker({ value, onChange, disabled = false, onEnter, layout = 'vertical' }: Props) {
   const { t } = useI18n();
   const [mode, setMode] = useState<'rgb'|'hsl'>('rgb');
   const [hslDraft, setHslDraft] = useState<{hex:string; value:HSLColor} | null>(null);
@@ -40,9 +41,9 @@ export function ColorPicker({ value, onChange, disabled = false, onEnter }: Prop
     catch { setCopyStatus({hex,ok:false}); }
   };
   const channel = (key:TranslationKey, value:number, max:number, onValue:(n:number)=>void, gradient:string) => (
-    <label key={key} className="grid grid-cols-[minmax(0,1fr)_3rem] gap-x-2 items-center text-[11px]">
-      <span className="text-[#CBD5E1]">{t(key)}</span>
-      <span className="font-mono text-right tabular-nums text-sky-300">{Math.round(value)}</span>
+    <label key={key} className="color-picker-channel grid grid-cols-[minmax(0,1fr)_3rem] gap-x-2 items-center text-[11px]">
+      <span className="color-picker-channel-label text-[#CBD5E1]">{t(key)}</span>
+      <span className="color-picker-channel-value font-mono text-right tabular-nums text-sky-300">{Math.round(value)}</span>
       <input type="range" aria-label={t(key)} min={0} max={max} step={1} value={Math.round(value)}
         disabled={disabled || !hex} onChange={e=>onValue(Number(e.target.value))}
         className="col-span-2 w-full studio-slider" style={{background:gradient}} />
@@ -53,7 +54,9 @@ export function ColorPicker({ value, onChange, disabled = false, onEnter }: Prop
     return 'linear-gradient(to right,'+rgbToHex(a.r,a.g,a.b)+','+rgbToHex(b.r,b.g,b.b)+')';
   };
   return (
-    <div className="space-y-2 min-w-0 text-xs">
+    <div data-color-picker-layout={layout} className="color-picker-layout min-w-0 text-xs">
+      <div className="color-picker-content grid gap-2 min-w-0">
+      <div className="color-picker-controls grid gap-2 min-w-0">
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className="w-7 h-7 rounded border border-white/20 shrink-0" style={{backgroundColor:hex ?? 'transparent'}}/>
         <label className="min-w-0 flex-1">
@@ -74,6 +77,8 @@ export function ColorPicker({ value, onChange, disabled = false, onEnter }: Prop
         {(['rgb','hsl'] as const).map(m=><button key={m} type="button" aria-pressed={mode===m}
           onClick={()=>setMode(m)} className={'flex-1 py-1 font-mono '+(mode===m?'bg-sky-500/20 text-sky-200':'text-[#94A3B8]')}>{m.toUpperCase()}</button>)}
       </div>
+      </div>
+      <div className="color-picker-channels grid gap-2 min-w-0">
       {mode==='rgb' ? <>
         {channel('colorPicker.red',rgb.r,255,n=>changeRgb('r',n),rgbGradient('r'))}
         {channel('colorPicker.green',rgb.g,255,n=>changeRgb('g',n),rgbGradient('g'))}
@@ -83,6 +88,8 @@ export function ColorPicker({ value, onChange, disabled = false, onEnter }: Prop
         {channel('colorPicker.saturation',hsl.s,100,n=>changeHsl('s',n),'linear-gradient(to right,'+hslToHex(hsl.h,0,hsl.l)+','+hslToHex(hsl.h,100,hsl.l)+')')}
         {channel('colorPicker.lightness',hsl.l,100,n=>changeHsl('l',n),'linear-gradient(to right,#000,'+hslToHex(hsl.h,hsl.s,50)+',#fff)')}
       </>}
+      </div>
+      </div>
     </div>
   );
 }
