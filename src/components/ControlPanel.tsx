@@ -116,6 +116,7 @@ export function ControlPanel({
   onDownloadZip,
 }: ControlPanelProps) {
   const { locale, t } = useI18n();
+  const [copiedHex, setCopiedHex] = useState<string | null>(null);
   const [copiedImg, setCopiedImg] = useState<boolean>(false);
   const cleanupDisabledByDither = isCleanupDisabledByDither(config);
 
@@ -143,6 +144,13 @@ export function ControlPanel({
     } else {
       onSelectDimensions(config.targetW, clampedH);
     }
+  };
+
+  const handleCopyHex = (hex: string) => {
+    navigator.clipboard?.writeText(hex).catch(() => {});
+    onPickColor(hex);
+    setCopiedHex(hex);
+    window.setTimeout(() => setCopiedHex((curr) => (curr === hex ? null : curr)), 1200);
   };
 
   const handleCopyImageClick = async () => {
@@ -583,6 +591,29 @@ export function ControlPanel({
                     : t('panel.cleanupOffDesc')}
             </p>
           </div>
+
+          {result && result.palette.length > 0 && (
+            <div className="pt-1">
+              <div className="flex items-center justify-between text-[11px] text-[#8B95A8] mb-1.5">
+                <span>{t('panel.outputPalette', { count: result.uniqueColorCount })}</span>
+                <span className="font-mono text-sky-300">
+                  {copiedHex ? t('panel.copiedHex', { hex: copiedHex }) : t('panel.clickToCopyHex')}
+                </span>
+              </div>
+              <div className="grid grid-cols-12 gap-1">
+                {result.palette.map((hex) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => handleCopyHex(hex)}
+                    title={hex}
+                    className="h-5 rounded-[2px] border border-white/10 hover:scale-110 hover:z-10 transition-transform cursor-pointer"
+                    style={{ backgroundColor: hex }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {result && (
             <DocumentPalette
