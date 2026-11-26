@@ -247,7 +247,6 @@ export const en: TranslationDict = {
   'documentPalette.redo': "Redo",
   'documentPalette.existing': "Use an existing swatch as target",
   'documentPalette.empty': "No matching colors",
-  'documentPalette.preview': "Preview colors",
   'documentPalette.cancelPreview': "Cancel preview",
   'documentPalette.previewNotice': "Palette preview only: apply to commit. Apply or cancel before drawing on the canvas.",
 
