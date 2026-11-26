@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   Check,
@@ -33,6 +33,7 @@ import {
 import { useI18n, type TranslationKey } from '../i18n';
 
 interface ControlPanelProps {
+  paletteNavigationRequest: {kind:'reveal'|'pick'} | null;
   config: PixelEngineConfig;
   result: PixelEngineResult | null;
   sourceSize: { w: number; h: number } | null;
@@ -152,8 +153,27 @@ export function ControlPanel({
   onDownloadSpriteSheet,
   onDownloadGif,
   onDownloadZip,
+  paletteNavigationRequest,
 }: ControlPanelProps) {
   const { locale, t } = useI18n();
+  const scrollPanelRef = useRef<HTMLDivElement>(null);
+  const documentPaletteRef = useRef<HTMLDivElement>(null);
+  const handledNavigation = useRef<ControlPanelProps['paletteNavigationRequest']>(null);
+  useEffect(() => {
+    if (!paletteNavigationRequest || handledNavigation.current === paletteNavigationRequest || !result) return;
+    const target = documentPaletteRef.current;
+    const panel = scrollPanelRef.current;
+    if (!target || !panel) return;
+    handledNavigation.current = paletteNavigationRequest;
+    // In the stacked phone layout a direct pick must leave the canvas visible.
+    // The selected source will reveal itself after the user finishes picking.
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      if (paletteNavigationRequest.kind === 'reveal') target.scrollIntoView({block:'start',inline:'nearest'});
+    } else {
+      panel.scrollTo({top:panel.scrollTop + target.getBoundingClientRect().top - panel.getBoundingClientRect().top - 8,behavior:'auto'});
+    }
+    if (paletteNavigationRequest.kind === 'reveal') target.focus({preventScroll:true});
+  }, [paletteNavigationRequest, result]);
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
   const [copiedImg, setCopiedImg] = useState<boolean>(false);
   const cleanupDisabledByDither = isCleanupDisabledByDither(config);
@@ -208,7 +228,7 @@ export function ControlPanel({
 
   return (
     <aside className="w-full md:w-[308px] xl:w-[356px] shrink-0 border-t md:border-t-0 md:border-l border-[#222733] bg-[#11141B] flex flex-col min-h-0">
-      <div className="flex-1 overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
+      <div ref={scrollPanelRef} className="flex-1 overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
         {/* Section 1: Output Resolution & Crop */}
         <section className="p-4 space-y-3.5">
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
@@ -653,7 +673,8 @@ export function ControlPanel({
             </div>
           )}
 
-          {result && sequenceFrameNames.length > 1 && (
+          {result && <div ref={documentPaletteRef} id="document-palette" tabIndex={-1} role="region" aria-label={t('documentPalette.title')} className="outline-none focus-visible:ring-1 focus-visible:ring-sky-400 rounded-sm">
+          {sequenceFrameNames.length > 1 && (
             <div className="flex rounded border border-[#2A3142] overflow-hidden mt-2">
               {(['frame','sequence'] as const).map(scope => (
                 <button key={scope} type="button" aria-pressed={paletteScope===scope}
@@ -664,7 +685,6 @@ export function ControlPanel({
               ))}
             </div>
           )}
-          {result && (
             <DocumentPalette
               key={paletteScope === 'sequence' ? 'sequence' : activeFrameId ?? 'none'}
               imageData={result.imageData}
@@ -693,7 +713,7 @@ export function ControlPanel({
               onUndo={paletteScope === 'sequence' ? onUndoSequence : onUndo}
               onRedo={paletteScope === 'sequence' ? onRedoSequence : onRedo}
             />
-          )}
+          </div>}
         </section>
 
         {/* Section 4: Tone & Alpha Adjustments */}
