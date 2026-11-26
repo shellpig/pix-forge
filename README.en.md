@@ -43,7 +43,7 @@ Development URL: `http://localhost:3000`.
 
 1. **Upload Image** starts a new workspace. Use **Append Frame** in the animation timeline to retain existing frames, or paste an image with Ctrl+V.
 2. Set the output dimensions, crop, algorithm, palette size, and dithering in the right-hand panel. Compare the results with the available views.
-3. Use **Pixel Editing** mode to refine individual pixels with editing tools and undo/redo.
+3. Use the **Document Palette** in the right panel to replace a single color, merge selected colors manually, or merge similar colors automatically. Enter HEX, adjust RGB/HSL sliders, or choose an existing swatch. Live previews do not write history; Apply commits the entire change once, and Cancel preserves the original. Automatic merging uses complete-link OKLab clustering (tolerance 0–0.300, up to 256 colors), retaining the most-used existing color by default with an optional representative override. Use **Pixel Editing** mode for individual pixels and undo/redo; the brush uses the same HEX/RGB/HSL picker.
 4. Switch to **Animation** mode, add at least two frames, drag to reorder them, and choose a playback speed.
 5. Export a PNG, Sprite Sheet, GIF, or ZIP. When conversion changes could affect edited frames, the UI lets you keep manual changes or apply the new conversion.
 

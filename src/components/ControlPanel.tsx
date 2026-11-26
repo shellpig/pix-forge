@@ -55,6 +55,7 @@ interface ControlPanelProps {
   canUndo: boolean;
   canRedo: boolean;
   onReplaceColor: (source: string, target: string) => boolean;
+  onApplyColors: (mapping: ReadonlyMap<string,string>) => boolean;
   onUndo: () => void;
   onRedo: () => void;
   onDownloadPng: () => void;
@@ -115,6 +116,7 @@ export function ControlPanel({
   canUndo,
   canRedo,
   onReplaceColor,
+  onApplyColors,
   onUndo,
   onRedo,
   onDownloadPng,
@@ -635,6 +637,7 @@ export function ControlPanel({
               canUndo={canUndo}
               canRedo={canRedo}
               onReplaceColor={onReplaceColor}
+              onApplyColors={onApplyColors}
               onPickColor={onPickColor}
               onUndo={onUndo}
               onRedo={onRedo}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Eraser,
   PaintBucket,
@@ -10,6 +10,8 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useI18n, type TranslationKey } from '../i18n';
+import { normalizeDocumentHex } from '../lib/documentPalette';
+import { ColorPicker } from './ColorPicker';
 
 export type PixelTool = 'pencil' | 'eraser' | 'eyedropper' | 'bucket' | 'wand';
 
@@ -62,6 +64,14 @@ export function PixelEditorBar({
   onResetEdits,
 }: PixelEditorBarProps) {
   const { t } = useI18n();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [brushDraft, setBrushDraft] = useState(editor.colorHex);
+  useEffect(() => { setBrushDraft(editor.colorHex); }, [editor.colorHex]);
+  const changeBrush = (value: string) => {
+    setBrushDraft(value);
+    const hex = normalizeDocumentHex(value);
+    if (hex) onUpdateEditor({ colorHex: hex });
+  };
 
   return (
     <div className="px-3 py-1.5 border-b border-[#222733] bg-[#131722] flex flex-col gap-1.5 shrink-0">
@@ -94,25 +104,13 @@ export function PixelEditorBar({
 
         <div className="h-4 w-px bg-[#262B38] shrink-0" aria-hidden="true" />
 
-        {/* Active Color Picker */}
-        <label
-          title={t('editor.colorTitle')}
-          className="inline-flex items-center gap-1.5 px-1.5 py-1 bg-[#0D1017] border border-[#2A3142] hover:border-sky-400/50 rounded-md cursor-pointer shrink-0"
-        >
-          <span
-            className="w-3.5 h-3.5 rounded-[2px] border border-white/25 shrink-0"
-            style={{ backgroundColor: editor.colorHex }}
-          />
-          <input
-            type="color"
-            value={editor.colorHex}
-            onChange={(e) => onUpdateEditor({ colorHex: e.target.value.toLowerCase() })}
-            className="sr-only"
-          />
-          <span className="text-[11px] font-mono tabular-nums text-[#CBD5E1] uppercase">
-            {editor.colorHex}
-          </span>
-        </label>
+        {/* Active Color Picker: same compact trigger, custom editor outside the scroll row. */}
+        <button type="button" title={t('editor.colorTitle')} aria-expanded={pickerOpen}
+          onClick={() => { setBrushDraft(editor.colorHex); setPickerOpen(v=>!v); }}
+          className="inline-flex items-center gap-1.5 px-1.5 py-1 bg-[#0D1017] border border-[#2A3142] hover:border-sky-400/50 rounded-md cursor-pointer shrink-0">
+          <span className="w-3.5 h-3.5 rounded-[2px] border border-white/25 shrink-0" style={{ backgroundColor: editor.colorHex }}/>
+          <span className="text-[11px] font-mono tabular-nums text-[#CBD5E1] uppercase">{editor.colorHex}</span>
+        </button>
 
         {/* Contextual Tool Options */}
         {(editor.tool === 'pencil' || editor.tool === 'eraser') && (
@@ -216,6 +214,16 @@ export function PixelEditorBar({
           )}
         </div>
       </div>
+
+      {pickerOpen && (
+        <div className="self-start w-full max-w-72 rounded border border-[#2A3142] bg-[#0D1017] p-2">
+          <div className="flex items-center justify-between mb-2 gap-2 text-xs">
+            <span>{t('editor.colorTitle')}</span>
+            <button type="button" onClick={()=>setPickerOpen(false)} className="text-sky-300 hover:text-sky-200">{t('colorPicker.close')}</button>
+          </div>
+          <ColorPicker value={brushDraft} onChange={changeBrush} onEnter={()=>{if(normalizeDocumentHex(brushDraft))setPickerOpen(false);}}/>
+        </div>
+      )}
 
       {/* Quick Clickable Palette Row for Fast Pixel Touch-up */}
       {palette.length > 0 && (
