@@ -161,7 +161,13 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     if (!revealHex) return;
     // Do not pull a phone user away from the canvas mid multi-pick.
     if (canvasSourcePickMode && window.matchMedia('(max-width: 767px)').matches) return;
-    paletteRootRef.current?.querySelector('[data-palette-hex="'+revealHex+'"]')?.scrollIntoView({block:'nearest',inline:'nearest'});
+    const root = paletteRootRef.current;
+    const swatch = root?.querySelector('[data-palette-hex="'+revealHex+'"]');
+    swatch?.scrollIntoView({block:'nearest',inline:'nearest'});
+    // On a stacked layout, expose the target input without opening the keyboard.
+    if (!canvasSourcePickMode && window.matchMedia('(max-width: 767px)').matches) {
+      root?.querySelector('[data-color-picker-layout] input:not([type="range"])')?.scrollIntoView({block:'nearest',inline:'nearest'});
+    }
     setRevealHex(null);
   }, [revealHex,currentPage,canvasSourcePickMode]);
 

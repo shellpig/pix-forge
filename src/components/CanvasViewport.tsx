@@ -275,7 +275,7 @@ export function CanvasViewport({
     } catch {
       // Ignore storage access errors
     }
-    return true;
+    return !window.matchMedia('(max-width: 767px)').matches;
   });
 
   useEffect(() => {
@@ -867,7 +867,7 @@ export function CanvasViewport({
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#0B0D11] relative select-none"
+      className="flex-none md:flex-1 flex flex-col min-w-0 min-h-0 bg-[#0B0D11] relative select-none"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -1135,7 +1135,7 @@ export function CanvasViewport({
           onPointerMove={handleStagePointerMove}
           onPointerUp={handleStagePointerUp}
           onPointerCancel={handleStagePointerUp}
-          className={`flex-1 min-h-0 flex p-3 sm:p-4 ${
+          className={`flex-1 min-h-[clamp(260px,50dvh,480px)] md:min-h-0 flex p-3 sm:p-4 ${
             viewMode === 'edit'
               ? `overflow-hidden ${isPanning ? 'cursor-grabbing' : ''}`
               : 'overflow-auto studio-scroll'
@@ -1296,6 +1296,7 @@ export function CanvasViewport({
 
             <div
               ref={editCanvasBoxRef}
+              data-testid="pixel-edit-canvas"
               onPointerDown={handleEditPointerDown}
               onPointerMove={handleEditPointerMove}
               onPointerUp={finishEditStroke}
@@ -1307,7 +1308,7 @@ export function CanvasViewport({
               className={`border border-[#333C4F] overflow-hidden relative touch-none cursor-crosshair ${backdropClass}`}
               style={{ width: dispW, height: dispH }}
             >
-              <canvas ref={pixelCanvasRef} className="w-full h-full block pixelated" />
+              <canvas ref={pixelCanvasRef} data-testid="pixel-edit-bitmap" className="w-full h-full block pixelated" />
               {showGrid && (
                 <PixelGridOverlay
                   width={dispW}
@@ -1525,7 +1526,7 @@ export function CanvasViewport({
 
         {/* Floating 1:1 Actual Size Preview Panel (syncs live with animation playback too!) */}
         {sourceImage && result && viewMode !== 'crop' && (
-          <div className="fixed md:absolute bottom-4 right-4 z-20 bg-[#12161F]/95 border border-[#262B38] rounded-md shadow-xl overflow-hidden">
+          <div className={`relative self-end max-w-full md:absolute md:bottom-4 md:right-4 z-20 bg-[#12161F]/95 border border-[#262B38] rounded-md shadow-xl overflow-hidden ${canvasSourcePickMode ? 'hidden md:block' : ''}`}>
             <div className="px-2.5 py-1.5 border-b border-[#222733] flex items-center justify-between gap-4">
               <span className="text-[11px] font-medium text-[#CBD5E1] whitespace-nowrap">
                 {viewMode === 'animate' && isPlaying ? t('realSize.liveTitle', { fps }) : t('realSize.title')}
@@ -1540,7 +1541,7 @@ export function CanvasViewport({
               </button>
             </div>
             {showRealSize && (
-              <div className="p-3 flex items-end gap-4">
+              <div className="p-3 flex items-end gap-4 overflow-x-auto studio-scroll">
                 <div className="flex flex-col items-center gap-1">
                   <div className={`border border-[#2C3344] ${backdropClass}`}>
                     <canvas

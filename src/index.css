@@ -135,3 +135,19 @@ input[type="range"].studio-slider::-moz-range-thumb {
   }
 }
 
+
+/* Enlarge the range input hit area on touch without changing desktop density. */
+@media (pointer: coarse) {
+  .color-picker-channel input[type="range"].studio-slider {
+    height: 24px;
+    border-radius: 6px;
+  }
+  .color-picker-channel input[type="range"].studio-slider::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+  .color-picker-channel input[type="range"].studio-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+}

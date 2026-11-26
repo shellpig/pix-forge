@@ -10,6 +10,7 @@ on:
       - feat/document-palette-phase-4a
       - feat/document-palette-phase-4b
       - feat/document-palette-phase-4c
+      - feat/document-palette-phase-4d
   pull_request:
     branches:
       - main
@@ -17,6 +18,7 @@ on:
       - feat/document-palette-phase-3a
       - feat/document-palette-phase-4a
       - feat/document-palette-phase-4b
+      - feat/document-palette-phase-4c
   workflow_dispatch:
 
 permissions:
@@ -36,3 +38,37 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+
+  browser-palette:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pixforge-browser" --no-save --package-lock=false playwright@1.51.1
+          "$RUNNER_TEMP/pixforge-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Test actual browser interactions
+        env:
+          PIXFORGE_BROWSER_TOOLS: ${{ runner.temp }}/pixforge-browser
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/pixforge-preview.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/browser-palette-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: palette-browser-screenshots
+          path: browser-artifacts/
+          if-no-files-found: ignore
