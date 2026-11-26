@@ -22,7 +22,7 @@ export const en: TranslationDict = {
   'sample.clipboardName': 'clipboard.png',
 
   // App Errors
-  'error.imageLoad': 'Failed to load image',
+
   'error.sampleLoad': 'Failed to load sample image.',
   'error.uploadRead': 'Some images could not be read. Please use PNG / JPG / WebP.',
   'error.batchConvert': 'Batch conversion error occurred',
