@@ -48,6 +48,10 @@ interface ControlPanelProps {
   onPickColor: (hex: string) => void;
   activeFrameId: string | null;
   paletteEditingDisabled: boolean;
+  palettePreviewActive: boolean;
+  palettePreviewDisabled: boolean;
+  onPreviewColors: (mapping: ReadonlyMap<string, string>) => void;
+  onCancelPreview: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onReplaceColor: (source: string, target: string) => boolean;
@@ -104,6 +108,10 @@ export function ControlPanel({
   onPickColor,
   activeFrameId,
   paletteEditingDisabled,
+  palettePreviewActive,
+  palettePreviewDisabled,
+  onPreviewColors,
+  onCancelPreview,
   canUndo,
   canRedo,
   onReplaceColor,
@@ -620,6 +628,10 @@ export function ControlPanel({
               key={activeFrameId ?? 'none'}
               imageData={result.imageData}
               disabled={paletteEditingDisabled}
+              previewActive={palettePreviewActive}
+              previewDisabled={palettePreviewDisabled}
+              onPreviewColors={onPreviewColors}
+              onCancelPreview={onCancelPreview}
               canUndo={canUndo}
               canRedo={canRedo}
               onReplaceColor={onReplaceColor}
