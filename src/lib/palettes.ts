@@ -79,6 +79,7 @@ export const PRESET_PALETTES: PresetPalette[] = [
     name: 'Game Boy (4)',
     colors: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
   },
+  { id: 'black-white', name: 'Black & White (2)', colors: ['#000000', '#ffffff'] },
 ];
 
 export function hexToRgb(hex: string): RGBColor {

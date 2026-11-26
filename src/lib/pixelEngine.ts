@@ -32,7 +32,7 @@ export interface PixelEngineConfig {
   smoothness: number; // 0..100
   preSharpen: number; // 0..100
   paletteMode: PaletteMode;
-  autoColorCount: number; // 4..64
+  autoColorCount: number; // 2..64
   sharedSequencePalette: boolean; // Share one unified OKLab palette across all animation frames
   presetPaletteId: string;
   ditherMode: DitherMode;

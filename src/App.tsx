@@ -20,6 +20,7 @@ import {
   exportPixelPngBlob,
   runBatchPixelConversion,
 } from './lib/pixelEngine';
+import { replaceDocumentColor } from './lib/documentPalette';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
   appendFrameEdit,
@@ -702,6 +703,17 @@ export default function App() {
     [activeFrame, pushUndoAction]
   );
 
+  const handleReplaceDocumentColor = useCallback(
+    (source: string, target: string): boolean => {
+      if (!activeResult || !activeFrame || isPlaying || isBatchProcessing) return false;
+      const next = cloneImageData(activeResult.imageData);
+      if (replaceDocumentColor(next.data, source, target) === 0) return false;
+      handleCommitImageData(next);
+      return true;
+    },
+    [activeResult, activeFrame, isPlaying, isBatchProcessing, handleCommitImageData]
+  );
+
   const handleUndo = useCallback(() => {
     if (!activeFrame || activeFrame.historyIndex <= 0) return;
     const targetId = activeFrame.id;
@@ -1306,6 +1318,13 @@ export default function App() {
           onSelectDimensions={handleSelectDimensions}
           onResetConfig={handleResetConfig}
           onPickColor={handlePickColor}
+          activeFrameId={activeFrame?.id ?? null}
+          paletteEditingDisabled={isPlaying || isBatchProcessing}
+          canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
+          canRedo={Boolean(activeFrame && activeFrame.historyIndex >= 0 && activeFrame.historyIndex < activeFrame.editHistory.length - 1)}
+          onReplaceColor={handleReplaceDocumentColor}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
           onDownloadPng={handleDownloadPng}
           onCopyPng={handleCopyPng}
           onDownloadSpriteSheet={handleDownloadSpriteSheet}

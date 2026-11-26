@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Unlock,
 } from 'lucide-react';
+import { DocumentPalette } from './DocumentPalette';
 import { PRESET_PALETTES } from '../lib/palettes';
 import {
   getSpriteSheetLayout,
@@ -45,6 +46,13 @@ interface ControlPanelProps {
   onSelectDimensions: (w: number, h: number) => void;
   onResetConfig: () => void;
   onPickColor: (hex: string) => void;
+  activeFrameId: string | null;
+  paletteEditingDisabled: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onReplaceColor: (source: string, target: string) => boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onDownloadPng: () => void;
   onCopyPng: () => Promise<void>;
   onDownloadSpriteSheet: () => void;
@@ -94,6 +102,13 @@ export function ControlPanel({
   onSelectDimensions,
   onResetConfig,
   onPickColor,
+  activeFrameId,
+  paletteEditingDisabled,
+  canUndo,
+  canRedo,
+  onReplaceColor,
+  onUndo,
+  onRedo,
   onDownloadPng,
   onCopyPng,
   onDownloadSpriteSheet,
@@ -421,15 +436,15 @@ export function ControlPanel({
               </div>
               <input
                 type="range"
-                min={4}
+                min={2}
                 max={64}
-                step={2}
+                step={1}
                 value={config.autoColorCount}
                 onChange={(e) => onUpdateConfig({ autoColorCount: Number(e.target.value) })}
                 className="w-full studio-slider"
               />
               <div className="flex items-center gap-1.5">
-                {[8, 12, 16, 24, 32, 48, 64].map((n) => (
+                {[2, 4, 8, 16, 32, 64].map((n) => (
                   <button
                     key={n}
                     type="button"
@@ -598,6 +613,20 @@ export function ControlPanel({
                 ))}
               </div>
             </div>
+          )}
+
+          {result && (
+            <DocumentPalette
+              key={activeFrameId ?? 'none'}
+              imageData={result.imageData}
+              disabled={paletteEditingDisabled}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onReplaceColor={onReplaceColor}
+              onPickColor={onPickColor}
+              onUndo={onUndo}
+              onRedo={onRedo}
+            />
           )}
         </section>
 
