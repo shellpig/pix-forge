@@ -3,7 +3,9 @@ name: Pix-Forge verification
 on:
   push:
     branches:
+      - main
       - feat/document-palette-phase-2c
+      - feat/document-palette-phase-3a
   pull_request:
     branches:
       - main
