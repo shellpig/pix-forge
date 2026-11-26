@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { hexToRgb, rgbToHex } from '../lib/palettes';
+import { pixelCoordsFromClient, readCanvasSourceColor, type CanvasSourcePickMode } from '../lib/canvasSourcePick';
 import {
   CropRect,
   PixelEngineConfig,
@@ -51,6 +52,9 @@ interface CanvasViewportProps {
   result: PixelEngineResult | null;
   previewImageData: ImageData | null;
   sequencePreviewActive: boolean;
+  canvasSourcePickMode: CanvasSourcePickMode | null;
+  onCanvasSourceColor: (hex:string) => void;
+  onFinishCanvasSourcePick: () => void;
   onCancelPalettePreview: () => void;
   config: PixelEngineConfig;
   viewMode: ViewMode;
@@ -190,6 +194,7 @@ export function CanvasViewport({
   result,
   previewImageData,
   sequencePreviewActive,
+  canvasSourcePickMode, onCanvasSourceColor, onFinishCanvasSourcePick,
   onCancelPalettePreview,
   config,
   viewMode,
@@ -652,11 +657,8 @@ export function CanvasViewport({
   // --- Pixel Editor Pointer Interaction Helpers ---
   const getPixelCoordsFromEvent = (e: React.PointerEvent<HTMLDivElement>): { x: number; y: number } | null => {
     if (!result) return null;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - rect.left) / rect.width) * result.width);
-    const y = Math.floor(((e.clientY - rect.top) / rect.height) * result.height);
-    if (x < 0 || x >= result.width || y < 0 || y >= result.height) return null;
-    return { x, y };
+    const rect = pixelCanvasRef.current?.getBoundingClientRect();
+    return rect ? pixelCoordsFromClient(rect,e.clientX,e.clientY,result.width,result.height) : null;
   };
 
   const updateHoverInfo = (coords: { x: number; y: number } | null) => {
@@ -680,6 +682,15 @@ export function CanvasViewport({
 
   const handleEditPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!result || previewImageData) return;
+    if (canvasSourcePickMode) {
+      if (e.button !== 0 || !e.isPrimary) return;
+      e.preventDefault();
+      const coords = getPixelCoordsFromEvent(e);
+      if (!coords) return;
+      const hex = readCanvasSourceColor(result.imageData,coords.x,coords.y);
+      if (hex) onCanvasSourceColor(hex);
+      return;
+    }
     if (e.button !== 0 && e.button !== 2) return;
     e.preventDefault();
 
@@ -823,10 +834,16 @@ export function CanvasViewport({
     }
   };
 
+  useEffect(() => {
+    if (canvasSourcePickMode && window.matchMedia('(max-width: 767px)').matches) {
+      editCanvasBoxRef.current?.scrollIntoView({block:'nearest',inline:'nearest'});
+    }
+  }, [canvasSourcePickMode]);
+
   const brushPreviewRect = (() => {
     if (viewMode !== 'edit' || !hoverPixel || !result) return null;
     const isSingleCellTool =
-      editor.tool === 'eyedropper' || editor.tool === 'bucket' || editor.tool === 'wand';
+      !!canvasSourcePickMode || editor.tool === 'eyedropper' || editor.tool === 'bucket' || editor.tool === 'wand';
     const sz = isSingleCellTool ? 1 : editor.brushSize;
     const half = Math.floor((sz - 1) / 2);
     const startX = Math.max(0, hoverPixel.x - half);
@@ -840,7 +857,7 @@ export function CanvasViewport({
       top: startY * cellH,
       width: (endX - startX) * cellW,
       height: (endY - startY) * cellH,
-      isErase: editor.tool === 'eraser' || editor.tool === 'wand',
+      isErase: !canvasSourcePickMode && (editor.tool === 'eraser' || editor.tool === 'wand'),
     };
   })();
 
@@ -1060,6 +1077,15 @@ export function CanvasViewport({
         />
       )}
 
+      {canvasSourcePickMode && (
+        <div role="status" className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
+          <span>{t(canvasSourcePickMode==='manual'?'documentPalette.canvasPickManualHint':'documentPalette.canvasPickSingleHint')}</span>
+          <div className="flex gap-2">
+            {canvasSourcePickMode==='manual' && <button type="button" onClick={onFinishCanvasSourcePick} className="px-2 py-1 rounded bg-sky-600 text-white">{t('documentPalette.canvasPickDone')}</button>}
+            <button type="button" onClick={onCancelPalettePreview} className="px-2 py-1 border border-[#2D3546] rounded">{t('documentPalette.canvasPickCancel')}</button>
+          </div>
+        </div>
+      )}
       {previewImageData && (
         <div role="status" className="px-4 py-2 bg-sky-500/10 border-b border-sky-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100 shrink-0">
           <span>{t(sequencePreviewActive ? 'sequencePalette.previewNotice' : 'documentPalette.previewNotice')}</span>
@@ -1248,10 +1274,10 @@ export function CanvasViewport({
                   {timelineFrames.length > 1
                     ? t('edit.framePrefix', { n: activeFrameIdx + 1 })
                     : ''}
-                  {t(`edit.title.${editor.tool}`)}
+                  {canvasSourcePickMode ? t('documentPalette.canvasPick') : t(`edit.title.${editor.tool}`)}
                 </span>
                 <span className="text-[11px] text-[#8B95A8]">
-                  {t(`edit.hint.${editor.tool}`)}
+                  {canvasSourcePickMode ? t('documentPalette.canvasPickShortHint') : t(`edit.hint.${editor.tool}`)}
                   {t('edit.hint.zoomPan')}
                 </span>
               </div>
