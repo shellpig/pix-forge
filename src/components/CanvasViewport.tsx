@@ -53,6 +53,9 @@ interface CanvasViewportProps {
   previewImageData: ImageData | null;
   sequencePreviewActive: boolean;
   canvasSourcePickMode: CanvasSourcePickMode | null;
+  canStartCanvasSourcePick: boolean;
+  onToolbarReplace: () => void;
+  onRevealDocumentPalette: () => void;
   onCanvasSourceColor: (hex:string) => void;
   onFinishCanvasSourcePick: () => void;
   onCancelPalettePreview: () => void;
@@ -195,6 +198,7 @@ export function CanvasViewport({
   previewImageData,
   sequencePreviewActive,
   canvasSourcePickMode, onCanvasSourceColor, onFinishCanvasSourcePick,
+  canStartCanvasSourcePick, onToolbarReplace, onRevealDocumentPalette,
   onCancelPalettePreview,
   config,
   viewMode,
@@ -1065,6 +1069,10 @@ export function CanvasViewport({
         <PixelEditorBar
           editor={editor}
           palette={result.palette}
+          canvasPicking={!!canvasSourcePickMode}
+          canStartCanvasSourcePick={canStartCanvasSourcePick}
+          onToolbarReplace={onToolbarReplace}
+          onRevealDocumentPalette={onRevealDocumentPalette}
           canUndo={canUndo}
           canRedo={canRedo}
           hasManualEdits={hasManualEdits}
