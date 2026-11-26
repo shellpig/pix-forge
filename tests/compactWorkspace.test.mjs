@@ -126,7 +126,7 @@ test('preview cancellation consumes undo and redo before modifying either histor
   const panel = readFileSync('src/components/ControlPanel.tsx', 'utf8');
   const document = readFileSync('src/components/DocumentPalette.tsx', 'utf8');
   assert.match(panel, /draftResetVersion=\{paletteDraftResetVersion\}/);
-  const reset = document.slice(document.indexOf('if (lastDraftResetVersion !== draftResetVersion)'), document.indexOf('else if (lastImage !== imageData)'));
+  const reset = document.slice(document.indexOf('if (lastDraftResetVersion !== draftResetVersion)'), document.indexOf('else if (lastImage !== paletteIdentity)'));
   for (const action of ['setSelected([])', "setDraft('')", 'setChooseTarget(false)', 'setTolerance(0)', 'setOverrides(new Map())']) {
     assert.ok(reset.includes(action), 'missing draft reset: ' + action);
   }
@@ -200,4 +200,19 @@ test('batch pixel journal is the shared local/global history path and never pers
   assert.match(app,/sealBatchHistory\(targetId\)/);
   assert.match(app,/manualEditCheckpoint: manualImg && \(getHistoryFloor\(f\) > 0 \|\| appliedBatchFrameIds.has\(f.id\)\)/);
   assert.match(app,/historyFloor: manualImg && pf.manualEditCheckpoint === true \? 1 : undefined/);
+});
+
+test('sequence scope keeps the document palette mounted across active-frame changes and routes the whole mapping once',()=>{
+  const panel=readFileSync('src/components/ControlPanel.tsx','utf8');
+  const doc=readFileSync('src/components/DocumentPalette.tsx','utf8');
+  assert.ok(panel.includes("key={paletteScope === 'sequence' ? 'sequence' : activeFrameId ?? 'none'}"));
+  assert.ok(panel.includes("onPreviewColors={paletteScope === 'sequence' ? onPreviewSequenceColors : onPreviewColors}"));
+  assert.match(doc,/onApplySequenceColors\(mapping\)/);
+  assert.match(app,/onApplySequenceColors=\{handleApplySequencePalette\}/);
+  assert.match(app,/equalPaletteMappings\(validSequencePreview.mapping,mapping\)/);
+  assert.match(app,/previewSequenceFrame\(activeFrame, validSequencePreview.mapping\)/);
+  assert.match(app,/sequencePreview.frames === frames/);
+  assert.match(app,/const timelineFrames:[\s\S]*?imageData: getEffectiveFrameImageData\(f\)/);
+  assert.match(app,/onUndoSequence=\{handleGlobalUndo\}/);
+  assert.match(app,/onRedoSequence=\{handleGlobalRedo\}/);
 });
