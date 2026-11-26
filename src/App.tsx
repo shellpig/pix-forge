@@ -204,8 +204,11 @@ export default function App() {
 
   // A reconversion, membership change or explicit reset may invalidate a
   // conversion baseline. Retire whole batch boundaries before those actions.
-  const sealBatchHistory = useCallback(() => {
-    const retired = retireBatchHistory(readHistoryJournal());
+  const sealBatchHistory = useCallback((frameId?: string) => {
+    const journal = readHistoryJournal();
+    if (frameId && ![...journal.undo, ...journal.redo].some(entry =>
+      entry.type === 'batch-pixel-edit' && entry.changes.some(change => change.frameId === frameId))) return;
+    const retired = retireBatchHistory(journal);
     if (retired.retired) {
       publishHistoryJournal(retired.journal);
       notifyBatchRetirement(retired.retired);
@@ -454,17 +457,16 @@ export default function App() {
   }, []);
 
   const clearAllManualEdits = useCallback(() => {
-    sealBatchHistory();
     setFrames((prev) => prev.map((f) => ({ ...f, editHistory: [], historyIndex: -1, historyFloor: undefined })));
     undoStackRef.current = undoStackRef.current.filter((e) => e.type === 'delete-frame');
     redoStackRef.current = redoStackRef.current.filter((e) => e.type === 'delete-frame');
     setHasPendingReconvert(false);
-  }, [sealBatchHistory]);
+  }, []);
 
   const clearActiveFrameManualEdits = useCallback(() => {
     if (!activeFrame) return;
     const targetId = activeFrame.id;
-    sealBatchHistory();
+    sealBatchHistory(targetId);
     setFrames((prev) =>
       prev.map((f) => (f.id === targetId ? { ...f, editHistory: [], historyIndex: -1, historyFloor: undefined } : f))
     );
@@ -835,7 +837,7 @@ export default function App() {
     const committed = commitSequenceColors(readHistoryJournal(), mapping, {
       isPlaying, isConversionPending: isConversionPending || conversionFailed,
       isBatchProcessing, hasPendingReconvert, hasPreview: previewImageData !== null,
-    }, crypto.randomUUID());
+    }, globalThis.crypto?.randomUUID?.() ?? makeFrameId());
     if (committed.ok) {
       publishHistoryJournal(committed.journal);
       notifyBatchRetirement(committed.retired);
