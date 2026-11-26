@@ -6,10 +6,12 @@ on:
       - main
       - feat/document-palette-phase-2c
       - feat/document-palette-phase-3a
+      - feat/document-palette-phase-3b
   pull_request:
     branches:
       - main
       - feat/document-palette-phase-2b
+      - feat/document-palette-phase-3a
   workflow_dispatch:
 
 permissions:
