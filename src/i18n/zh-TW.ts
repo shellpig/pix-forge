@@ -237,7 +237,6 @@ export const zhTW = {
   'documentPalette.redo': "重做",
   'documentPalette.existing': "使用現有色塊作為目標",
   'documentPalette.empty': "沒有符合的顏色",
-  'documentPalette.preview': "預覽改色",
   'documentPalette.cancelPreview': "取消預覽",
   'documentPalette.previewNotice': "色盤預覽中：套用才會修改圖片。請先套用或取消預覽，再於畫布繪圖。",
 
