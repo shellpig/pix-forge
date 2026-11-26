@@ -1399,6 +1399,7 @@ export default function App() {
           canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
           canRedo={Boolean(activeFrame && activeFrame.historyIndex >= 0 && activeFrame.historyIndex < activeFrame.editHistory.length - 1)}
           onReplaceColor={handleReplaceDocumentColor}
+          onApplyColors={handleApplyDocumentColors}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onDownloadPng={handleDownloadPng}
