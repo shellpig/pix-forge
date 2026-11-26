@@ -20,7 +20,7 @@ export const zhTW = {
   'sample.clipboardName': '剪貼簿圖片.png',
 
   // App Errors
-  'error.imageLoad': '圖片載入失敗',
+
   'error.sampleLoad': '範例圖片載入失敗。',
   'error.uploadRead': '部分圖片無法讀取，請確認格式為 PNG / JPG / WebP。',
   'error.batchConvert': '批次轉換運算發生錯誤',
@@ -218,6 +218,28 @@ export const zhTW = {
   'panel.outputPalette': '輸出色盤（共 {count} 色）',
   'panel.copiedHex': '已選取 {hex}',
   'panel.clickToCopyHex': '點擊取色／複製',
+
+  'documentPalette.title': "文件色盤",
+  'documentPalette.hint': "點選要全域替換的顏色（目前影格）",
+  'documentPalette.source': "原始顏色",
+  'documentPalette.target': "替換為（HEX）",
+  'documentPalette.apply': "套用全域改色",
+  'documentPalette.copy': "複製 HEX",
+  'documentPalette.copied': "已複製",
+  'documentPalette.failed': "複製失敗，請手動選取 HEX",
+  'documentPalette.brush': "取為畫筆色",
+  'documentPalette.search': "搜尋 HEX",
+  'documentPalette.invalid': "請輸入 6 位 HEX 色碼",
+  'documentPalette.prev': "上一頁",
+  'documentPalette.next': "下一頁",
+  'documentPalette.pixels': "像素",
+  'documentPalette.undo': "復原",
+  'documentPalette.redo': "重做",
+  'documentPalette.existing': "使用現有色塊作為目標",
+  'documentPalette.empty': "沒有符合的顏色",
+  'documentPalette.preview': "預覽改色",
+  'documentPalette.cancelPreview': "取消預覽",
+  'documentPalette.previewNotice': "色盤預覽中：套用才會修改圖片。請先套用或取消預覽，再於畫布繪圖。",
 
   'panel.toneSection': '畫面微調與透明邊緣',
   'panel.contrast': '對比度',

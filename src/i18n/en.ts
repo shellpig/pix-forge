@@ -22,7 +22,7 @@ export const en: TranslationDict = {
   'sample.clipboardName': 'clipboard.png',
 
   // App Errors
-  'error.imageLoad': 'Failed to load image',
+
   'error.sampleLoad': 'Failed to load sample image.',
   'error.uploadRead': 'Some images could not be read. Please use PNG / JPG / WebP.',
   'error.batchConvert': 'Batch conversion error occurred',
@@ -228,6 +228,28 @@ export const en: TranslationDict = {
   'panel.outputPalette': 'Output Palette ({count} colors)',
   'panel.copiedHex': 'Picked {hex}',
   'panel.clickToCopyHex': 'Click to pick / copy',
+
+  'documentPalette.title': "Document palette",
+  'documentPalette.hint': "Select a color to replace across the current frame",
+  'documentPalette.source': "Source color",
+  'documentPalette.target': "Replace with (HEX)",
+  'documentPalette.apply': "Apply global replacement",
+  'documentPalette.copy': "Copy HEX",
+  'documentPalette.copied': "Copied",
+  'documentPalette.failed': "Copy failed; select the HEX manually",
+  'documentPalette.brush': "Use as brush color",
+  'documentPalette.search': "Search HEX",
+  'documentPalette.invalid': "Enter a 6-digit HEX color",
+  'documentPalette.prev': "Previous",
+  'documentPalette.next': "Next",
+  'documentPalette.pixels': "pixels",
+  'documentPalette.undo': "Undo",
+  'documentPalette.redo': "Redo",
+  'documentPalette.existing': "Use an existing swatch as target",
+  'documentPalette.empty': "No matching colors",
+  'documentPalette.preview': "Preview colors",
+  'documentPalette.cancelPreview': "Cancel preview",
+  'documentPalette.previewNotice': "Palette preview only: apply to commit. Apply or cancel before drawing on the canvas.",
 
   'panel.toneSection': 'Tone & Alpha Cutoff',
   'panel.contrast': 'Contrast',

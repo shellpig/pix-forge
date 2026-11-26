@@ -20,7 +20,7 @@ import {
   exportPixelPngBlob,
   runBatchPixelConversion,
 } from './lib/pixelEngine';
-import { replaceDocumentColor } from './lib/documentPalette';
+import { createDocumentColorPreview } from './lib/documentPalette';
 import { autoRemoveCornerBackground, cloneImageData } from './lib/pixelEditOps';
 import {
   appendFrameEdit,
@@ -57,6 +57,15 @@ interface AnimationFrameItem {
   convertedResult: PixelEngineResult | null;
   editHistory: ImageData[];
   historyIndex: number;
+}
+
+interface PalettePreviewSession {
+  frame: AnimationFrameItem;
+  config: PixelEngineConfig;
+  sourceKey: string;
+  viewMode: ViewMode;
+  pendingReconvert: boolean;
+  imageData: ImageData;
 }
 
 type UndoActionEntry =
@@ -137,6 +146,8 @@ export default function App() {
   const [config, setConfig] = useState<PixelEngineConfig>(DEFAULT_ENGINE_CONFIG);
   const [hasPendingReconvert, setHasPendingReconvert] = useState<boolean>(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
+  const [isConversionPending, setIsConversionPending] = useState(false);
+  const [palettePreview, setPalettePreview] = useState<PalettePreviewSession | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const [editor, setEditor] = useState<PixelEditorState>({
@@ -209,6 +220,25 @@ export default function App() {
     };
   }, [activeFrame]);
 
+  // Only the canvas may read this ephemeral preview. All edits, exports, palette
+  // statistics, timeline thumbnails and persistence continue using committed frames.
+  const previewImageData =
+    palettePreview &&
+    palettePreview.frame === activeFrame &&
+    palettePreview.config === config &&
+    palettePreview.sourceKey === sourceKey &&
+    palettePreview.viewMode === viewMode &&
+    palettePreview.pendingReconvert === hasPendingReconvert &&
+    !isPlaying && !isConversionPending && !isBatchProcessing
+      ? palettePreview.imageData
+      : null;
+
+  useEffect(() => {
+    if (palettePreview && !previewImageData) setPalettePreview(null);
+  }, [palettePreview, previewImageData]);
+
+  const cancelPalettePreview = useCallback(() => setPalettePreview(null), []);
+
   const timelineFrames: TimelineFramePreview[] = useMemo(
     () =>
       frames.map((f) => ({
@@ -226,6 +256,7 @@ export default function App() {
     const currentFrames = framesRef.current;
     if (currentFrames.length === 0) {
       setIsBatchProcessing(false);
+      setIsConversionPending(false);
       return;
     }
 
@@ -234,6 +265,7 @@ export default function App() {
     let paintRaf = 0;
     let computeRaf = 0;
     setIsBatchProcessing(currentFrames.length > 1);
+    setIsConversionPending(true);
 
     const applyResults = (results: PixelEngineResult[]) => {
       if (cancelled) return;
@@ -249,12 +281,14 @@ export default function App() {
       );
       setErrorMsg(null);
       setIsBatchProcessing(false);
+      setIsConversionPending(false);
     };
 
     const reportError = (err: unknown) => {
       if (cancelled) return;
       setErrorMsg(err instanceof Error ? err.message : String(err || tRef.current('error.batchConvert')));
       setIsBatchProcessing(false);
+      setIsConversionPending(false);
     };
 
     // Older browsers without OffscreenCanvas/Workers retain a functional
@@ -690,6 +724,7 @@ export default function App() {
     (next: ImageData) => {
       if (!activeFrame || !activeFrame.convertedResult) return;
       const targetId = activeFrame.id;
+      setPalettePreview(null);
       // Ongoing painting must not silently dismiss a pending palette change.
 
       setFrames((prev) =>
@@ -703,18 +738,50 @@ export default function App() {
     [activeFrame, pushUndoAction]
   );
 
-  const handleReplaceDocumentColor = useCallback(
-    (source: string, target: string): boolean => {
-      if (!activeResult || !activeFrame || isPlaying || isBatchProcessing) return false;
-      const next = cloneImageData(activeResult.imageData);
-      if (replaceDocumentColor(next.data, source, target) === 0) return false;
-      handleCommitImageData(next);
+  // Every preview starts from the effective committed frame, never from an
+  // earlier preview. The same mapping path will serve manual/automatic merge.
+  const handlePreviewDocumentColors = useCallback(
+    (mapping: ReadonlyMap<string, string>) => {
+      if (!activeResult || !activeFrame || isPlaying || isConversionPending ||
+          isBatchProcessing || viewMode === 'crop') {
+        setPalettePreview(null);
+        return;
+      }
+      const preview = createDocumentColorPreview(activeResult.imageData.data, mapping);
+      if (!preview) {
+        setPalettePreview(null);
+        return;
+      }
+      const imageData = new ImageData(new Uint8ClampedArray(preview.data), activeResult.width, activeResult.height);
+      setPalettePreview({
+        frame: activeFrame, config, sourceKey, viewMode,
+        pendingReconvert: hasPendingReconvert, imageData,
+      });
+    },
+    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing,
+      viewMode, config, sourceKey, hasPendingReconvert]
+  );
+
+  // One mapping, one commit, one undo entry. Recompute from the committed
+  // baseline so no stale or cumulative preview data can enter history.
+  const handleApplyDocumentColors = useCallback(
+    (mapping: ReadonlyMap<string, string>): boolean => {
+      if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing) return false;
+      const next = createDocumentColorPreview(activeResult.imageData.data, mapping);
+      if (!next) return false;
+      handleCommitImageData(new ImageData(new Uint8ClampedArray(next.data), activeResult.width, activeResult.height));
       return true;
     },
-    [activeResult, activeFrame, isPlaying, isBatchProcessing, handleCommitImageData]
+    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing, handleCommitImageData]
+  );
+
+  const handleReplaceDocumentColor = useCallback(
+    (source: string, target: string): boolean => handleApplyDocumentColors(new Map([[source, target]])),
+    [handleApplyDocumentColors]
   );
 
   const handleUndo = useCallback(() => {
+    setPalettePreview(null);
     if (!activeFrame || activeFrame.historyIndex <= 0) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
@@ -735,6 +802,7 @@ export default function App() {
   }, [activeFrame]);
 
   const handleRedo = useCallback(() => {
+    setPalettePreview(null);
     if (!activeFrame || activeFrame.historyIndex >= activeFrame.editHistory.length - 1) return;
     const targetId = activeFrame.id;
     setFrames((prev) =>
@@ -755,6 +823,7 @@ export default function App() {
   }, [activeFrame]);
 
   const handleGlobalUndo = useCallback((): boolean => {
+    setPalettePreview(null);
     while (undoStackRef.current.length > 0) {
       const entry = undoStackRef.current.pop()!;
       if (entry.type === 'delete-frame') {
@@ -793,6 +862,7 @@ export default function App() {
   }, [activeFrame, handleUndo]);
 
   const handleGlobalRedo = useCallback((): boolean => {
+    setPalettePreview(null);
     while (redoStackRef.current.length > 0) {
       const entry = redoStackRef.current.pop()!;
       if (entry.type === 'delete-frame') {
@@ -1250,6 +1320,8 @@ export default function App() {
           sourceImage={activeFrame?.sourceImage ?? null}
           sourceName={activeFrame?.name ?? ''}
           result={activeResult}
+          previewImageData={previewImageData}
+          onCancelPalettePreview={cancelPalettePreview}
           config={config}
           viewMode={viewMode}
           editor={editor}
@@ -1319,7 +1391,11 @@ export default function App() {
           onResetConfig={handleResetConfig}
           onPickColor={handlePickColor}
           activeFrameId={activeFrame?.id ?? null}
-          paletteEditingDisabled={isPlaying || isBatchProcessing}
+          paletteEditingDisabled={isPlaying || isConversionPending || isBatchProcessing}
+          palettePreviewActive={previewImageData !== null}
+          palettePreviewDisabled={viewMode === 'crop'}
+          onPreviewColors={handlePreviewDocumentColors}
+          onCancelPreview={cancelPalettePreview}
           canUndo={Boolean(activeFrame && activeFrame.historyIndex > 0)}
           canRedo={Boolean(activeFrame && activeFrame.historyIndex >= 0 && activeFrame.historyIndex < activeFrame.editHistory.length - 1)}
           onReplaceColor={handleReplaceDocumentColor}

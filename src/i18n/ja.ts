@@ -22,7 +22,7 @@ export const ja: TranslationDict = {
   'sample.clipboardName': 'clipboard.png',
 
   // App Errors
-  'error.imageLoad': '画像の読み込みに失敗しました',
+
   'error.sampleLoad': 'サンプル画像の読み込みに失敗しました。',
   'error.uploadRead': '一部の画像を読み込めませんでした。PNG / JPG / WebP 形式をご使用ください。',
   'error.batchConvert': '一括変換処理でエラーが発生しました',
@@ -220,6 +220,28 @@ export const ja: TranslationDict = {
   'panel.outputPalette': '出力パレット（計 {count} 色）',
   'panel.copiedHex': '{hex} を選択',
   'panel.clickToCopyHex': 'クリックで色取得・コピー',
+
+  'documentPalette.title': "ドキュメントパレット",
+  'documentPalette.hint': "現在のフレーム全体で置換する色を選択",
+  'documentPalette.source': "元の色",
+  'documentPalette.target': "置換先（HEX）",
+  'documentPalette.apply': "全体の色を置換",
+  'documentPalette.copy': "HEXをコピー",
+  'documentPalette.copied': "コピー済み",
+  'documentPalette.failed': "コピーできません。HEXを手動で選択してください",
+  'documentPalette.brush': "ブラシ色に設定",
+  'documentPalette.search': "HEXを検索",
+  'documentPalette.invalid': "6桁のHEX色コードを入力",
+  'documentPalette.prev': "前へ",
+  'documentPalette.next': "次へ",
+  'documentPalette.pixels': "ピクセル",
+  'documentPalette.undo': "元に戻す",
+  'documentPalette.redo': "やり直す",
+  'documentPalette.existing': "既存の色を置換先にする",
+  'documentPalette.empty': "一致する色がありません",
+  'documentPalette.preview': "色のプレビュー",
+  'documentPalette.cancelPreview': "プレビューをキャンセル",
+  'documentPalette.previewNotice': "パレットのプレビュー中：適用するまで画像は変更されません。描画する前に適用またはキャンセルしてください。",
 
   'panel.toneSection': '色調調整・透過境界',
   'panel.contrast': 'コントラスト',
