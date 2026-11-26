@@ -54,7 +54,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
   const frameNames = useMemo(()=>new Map(sequenceFrameNames.map(f=>[f.id,f])),[sequenceFrameNames]);
   const paletteIdentity = sequencePalette ?? imageData;
   const colorSet = useMemo(()=>new Set(colors.map(c=>c.hex)),[colors]);
-  const [mode, setMode] = useState<Mode>('single');
+  const [mode, setMode] = useState<Mode>(canvasSourcePickMode ?? 'single');
   const [selected, setSelected] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -78,6 +78,7 @@ export function DocumentPalette({ imageData, sequencePalette, sequenceFrameNames
     // Undo/Escape/canvas cancellation consumes the entire transient transaction.
     // Preserve the current mode, search, pagination and live-preview preference.
     setLastDraftResetVersion(draftResetVersion);
+    if (canvasSourcePickMode) setMode(canvasSourcePickMode);
     setLastImage(paletteIdentity);
     setSelected([]);
     setDraft('');

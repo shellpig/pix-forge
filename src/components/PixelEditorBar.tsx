@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ArrowRight,
+  ArrowLeftRight,
   Eraser,
   PaintBucket,
   Pencil,
@@ -26,6 +28,10 @@ export interface PixelEditorState {
 interface PixelEditorBarProps {
   editor: PixelEditorState;
   palette: string[];
+  canvasPicking: boolean;
+  canStartCanvasSourcePick: boolean;
+  onToolbarReplace: () => void;
+  onRevealDocumentPalette: () => void;
   canUndo: boolean;
   canRedo: boolean;
   hasManualEdits: boolean;
@@ -53,6 +59,7 @@ const TOOL_ITEMS: Array<{
 export function PixelEditorBar({
   editor,
   palette,
+  canvasPicking, canStartCanvasSourcePick, onToolbarReplace, onRevealDocumentPalette,
   canUndo,
   canRedo,
   hasManualEdits,
@@ -82,7 +89,7 @@ export function PixelEditorBar({
         <div className="flex items-center bg-[#0D1017] border border-[#262C3B] rounded-md p-0.5 shrink-0">
           {TOOL_ITEMS.map((item) => {
             const Icon = item.icon;
-            const active = editor.tool === item.id;
+            const active = !canvasPicking && editor.tool === item.id;
             return (
               <button
                 key={item.id}
@@ -103,6 +110,14 @@ export function PixelEditorBar({
         </div>
 
         <div className="h-4 w-px bg-[#262B38] shrink-0" aria-hidden="true" />
+
+        <button type="button" aria-pressed={canvasPicking} disabled={!canStartCanvasSourcePick}
+          onClick={() => { setPickerOpen(false); onToolbarReplace(); }}
+          title={t('editor.batchReplaceTitle')}
+          className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${canvasPicking ? 'bg-sky-500/25 border-sky-300 text-sky-100' : 'bg-sky-500/10 border-sky-500/40 text-sky-300 hover:bg-sky-500/20'}`}>
+          <ArrowLeftRight className="w-3 h-3"/>
+          {t('editor.batchReplace')}
+        </button>
 
         {/* Active Color Picker: same compact trigger, custom editor outside the scroll row. */}
         <button type="button" title={t('editor.colorTitle')} aria-expanded={pickerOpen}
@@ -226,8 +241,8 @@ export function PixelEditorBar({
       )}
 
       {/* Quick Clickable Palette Row for Fast Pixel Touch-up */}
-      {palette.length > 0 && (
-        <div className="w-full pt-1.5 border-t border-[#1E2330] flex items-center gap-2 overflow-x-auto overflow-y-hidden studio-scroll">
+      <div className="w-full pt-1.5 border-t border-[#1E2330] flex items-center gap-2 min-w-0">
+        <div className="flex flex-1 min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden studio-scroll">
           <span className="text-[11px] text-[#8B95A8] whitespace-nowrap shrink-0">{t('editor.quickPalette')}</span>
           <div className="flex items-center gap-1 py-1 px-0.5">
             {palette.slice(0, 32).map((hex) => {
@@ -256,7 +271,11 @@ export function PixelEditorBar({
             })}
           </div>
         </div>
-      )}
+        <button type="button" onClick={onRevealDocumentPalette} title={t('editor.documentPaletteShortcutTitle')}
+          className="shrink-0 flex items-center gap-1 whitespace-nowrap text-[11px] text-sky-300 hover:text-sky-100 underline-offset-2 hover:underline px-1 py-1">
+          {t('editor.documentPaletteShortcut')}<ArrowRight className="w-3 h-3"/>
+        </button>
+      </div>
     </div>
   );
 }

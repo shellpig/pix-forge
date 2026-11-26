@@ -242,3 +242,30 @@ test('canvas source picking is isolated from brush editing and routes committed 
   assert.match(doc,/if \(canvasPickEvent.type === 'finish'\) \{\s*showPreview\(mapping\)/);
   assert.match(doc,/!canvasSourcePickMode && !previewDisabled/);
 });
+
+test('toolbar direct replace starts single-source picking with current scope; navigation-only entry never resets draft',()=>{
+  const bar=readFileSync('src/components/PixelEditorBar.tsx','utf8');
+  const panel=readFileSync('src/components/ControlPanel.tsx','utf8');
+  const doc=readFileSync('src/components/DocumentPalette.tsx','utf8');
+  const nav=app.slice(app.indexOf('const revealDocumentPalette ='),app.indexOf('const startToolbarReplace ='));
+  assert.match(nav,/setPaletteNavigationRequest\(\{kind:'reveal'\}\)/);
+  assert.doesNotMatch(nav,/setPaletteDraftResetVersion|startCanvasSourcePick|cancelPalettePreview|setEditor|setRequestedPaletteScope/);
+  const direct=app.slice(app.indexOf('const startToolbarReplace ='),app.indexOf('const stopCanvasSourcePick ='));
+  assert.match(direct,/if \(!canStartCanvasSourcePick\) return;/);
+  assert.match(direct,/if \(activeCanvasPick\) \{\s*revealDocumentPalette\(\);\s*return;/);
+  assert.match(direct,/setPaletteDraftResetVersion\(version => version \+ 1\)/);
+  assert.match(direct,/startCanvasSourcePick\('single'\)/);
+  assert.match(direct,/setPaletteNavigationRequest\(\{kind:'pick'\}\)/);
+  assert.doesNotMatch(direct,/setRequestedPaletteScope|setEditor|handleCommitImageData/);
+  assert.match(doc,/if \(canvasSourcePickMode\) setMode\(canvasSourcePickMode\)/);
+  assert.match(app,/onToolbarReplace=\{startToolbarReplace\}/);
+  assert.match(viewport,/onToolbarReplace=\{onToolbarReplace\}/);
+  assert.match(bar,/onClick=\{\(\) => \{ setPickerOpen\(false\); onToolbarReplace\(\); \}\}/);
+  assert.match(bar,/onClick=\{onRevealDocumentPalette\}/);
+  assert.match(bar,/const active = !canvasPicking && editor.tool === item.id/);
+  assert.match(bar,/palette\.slice\(0, 32\)\.map/);
+  assert.match(panel,/id="document-palette"/);
+  assert.match(panel,/panel.scrollTo\(\{top:panel.scrollTop/);
+  assert.match(panel,/if \(paletteNavigationRequest.kind === 'reveal'\) target.scrollIntoView/);
+  assert.match(panel,/target.focus\(\{preventScroll:true\}\)/);
+});

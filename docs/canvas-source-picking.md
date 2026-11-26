@@ -9,4 +9,11 @@ The existing document palette has a dedicated **Pick from canvas** control in Si
 - Escape, Ctrl+Z/Redo, or Cancel picking discard the draft before touching committed history. Finishing selection does not commit; the existing Apply action creates one history entry (or one batch transaction). Scope changes, frame changes in current-frame mode, configuration/committed frame changes, and leaving Pixel Editing cancel the picking session.
 - The original brush eyedropper remains a brush-color tool. No changes to remapping, OKLab clustering or batch history algorithms.
 
-The implementation includes core coordinate/RGB/selection tests and source-level integration coverage. Interactive browser verification (including narrow-screen layout) is separate. Phase 04-B will add the quick entry from the editor toolbar; Phase 04-C will compact the brush Color Picker.
+The implementation includes core coordinate/RGB/selection tests and source-level integration coverage. Interactive browser verification (including narrow-screen layout) is separate. Phase 04-C will compact the brush Color Picker.
+
+## Phase 04-B — Direct toolbar entry and navigation
+
+- **Replace color** starts a fresh single-source canvas-picking draft using the current frame/all-frames scope, with no pixel or history changes until Apply. It closes the brush color picker without changing the brush color or tool. If picking is already active, the button reveals the palette instead of resetting the selection.
+- **Document palette**, next to the brush quick colors, reveals the existing document palette (including scope selector) without changing any mode, selection, brush setting, or preview. The link remains outside the horizontally scrolling swatch strip.
+- On desktop, both shortcuts scroll the right control panel independently of the canvas. On narrow screens, the navigation-only shortcut scrolls to the panel; starting a source pick keeps the canvas in view until the user chooses a color. Browser verification of actual scroll positioning and mobile layout is still outstanding.
+- Unavailable or converting frames disable direct replacement according to the same guards as Phase 04-A. The original brush eyedropper and quick swatch behavior are preserved.
