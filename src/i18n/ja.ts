@@ -239,7 +239,6 @@ export const ja: TranslationDict = {
   'documentPalette.redo': "やり直す",
   'documentPalette.existing': "既存の色を置換先にする",
   'documentPalette.empty': "一致する色がありません",
-  'documentPalette.preview': "色のプレビュー",
   'documentPalette.cancelPreview': "プレビューをキャンセル",
   'documentPalette.previewNotice': "パレットのプレビュー中：適用するまで画像は変更されません。描画する前に適用またはキャンセルしてください。",
 
