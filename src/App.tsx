@@ -178,6 +178,7 @@ export default function App() {
   const [paletteDraftResetVersion, setPaletteDraftResetVersion] = useState(0);
   const [canvasSourcePick, setCanvasSourcePick] = useState<CanvasSourcePickSession | null>(null);
   const [canvasPickEvent, setCanvasPickEvent] = useState<CanvasSourcePickEvent | null>(null);
+  const [paletteNavigationRequest, setPaletteNavigationRequest] = useState<{kind:'reveal'|'pick'} | null>(null);
   const previewShortcutConsumedRef = useRef(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
@@ -351,6 +352,26 @@ export default function App() {
     setViewMode('edit');
   }, [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing,
     conversionFailed, paletteScope, sequenceBlockReason, frames, config, hasPendingReconvert, cancelPalettePreview]);
+
+  const canStartCanvasSourcePick = Boolean(activeResult && activeFrame && !isPlaying &&
+    !isConversionPending && !isBatchProcessing && !conversionFailed &&
+    (paletteScope !== 'sequence' || !sequenceBlockReason));
+
+  // Navigation alone never touches the palette draft, preview or brush.
+  const revealDocumentPalette = useCallback(() => {
+    setPaletteNavigationRequest({kind:'reveal'});
+  }, []);
+  const startToolbarReplace = useCallback(() => {
+    if (!canStartCanvasSourcePick) return;
+    if (activeCanvasPick) {
+      revealDocumentPalette();
+      return;
+    }
+    // Direct replacement starts a fresh single-color draft, preserving scope.
+    setPaletteDraftResetVersion(version => version + 1);
+    startCanvasSourcePick('single');
+    setPaletteNavigationRequest({kind:'pick'});
+  }, [canStartCanvasSourcePick, activeCanvasPick, revealDocumentPalette, startCanvasSourcePick]);
 
   const stopCanvasSourcePick = useCallback(() => {
     setCanvasSourcePick(null);
@@ -1484,6 +1505,9 @@ export default function App() {
           sequencePreviewActive={Boolean(validSequencePreview)}
           canvasSourcePickMode={activeCanvasPick?.mode ?? null}
           onCanvasSourceColor={handleCanvasSourceColor}
+          canStartCanvasSourcePick={canStartCanvasSourcePick}
+          onToolbarReplace={startToolbarReplace}
+          onRevealDocumentPalette={revealDocumentPalette}
           onFinishCanvasSourcePick={finishCanvasSourcePick}
           onCancelPalettePreview={dismissPalettePreview}
           config={config}
@@ -1530,6 +1554,7 @@ export default function App() {
         />
 
         <ControlPanel
+          paletteNavigationRequest={paletteNavigationRequest}
           config={config}
           result={activeResult}
           sourceSize={
