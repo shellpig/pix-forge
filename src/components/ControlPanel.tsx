@@ -228,7 +228,7 @@ export function ControlPanel({
 
   return (
     <aside className="w-full md:w-[308px] xl:w-[356px] shrink-0 border-t md:border-t-0 md:border-l border-[#222733] bg-[#11141B] flex flex-col min-h-0">
-      <div ref={scrollPanelRef} className="flex-1 overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
+      <div ref={scrollPanelRef} className="flex-none md:flex-1 md:overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
         {/* Section 1: Output Resolution & Crop */}
         <section className="p-4 space-y-3.5">
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
