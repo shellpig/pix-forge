@@ -106,6 +106,11 @@ check('desktop: compact geometry, RGB/HSL, direct HEX and document palette navig
     assert.notEqual(await hex.inputValue(),'#a55753');
     await picker.getByRole('button',{name:'RGB',exact:true}).click();
     await picker.getByRole('textbox',{name:'HEX code'}).fill('#123456');
+    await page.setViewportSize({width:800,height:800});
+    await page.waitForFunction(()=>{const e=document.querySelector('.brush-color-picker');const a=e?.querySelector('.color-picker-controls')?.getBoundingClientRect(),b=e?.querySelector('.color-picker-channels')?.getBoundingClientRect();return a&&b&&b.top>=a.bottom-1;});
+    assert.equal(await hex.inputValue(),'#123456');
+    await page.setViewportSize({width:1440,height:900});
+    await page.waitForFunction(()=>{const e=document.querySelector('.brush-color-picker');const a=e?.querySelector('.color-picker-controls')?.getBoundingClientRect(),b=e?.querySelector('.color-picker-channels')?.getBoundingClientRect();return a&&b&&b.left>=a.right-1;});
     await hex.press('Enter');
     await picker.waitFor({state:'hidden'});
     assert.match(await brushButton(page).innerText(),/#123456/i);
@@ -144,7 +149,7 @@ check('desktop: direct pick samples committed RGB, preview cancels before undo a
     await waitPixels(page,remap(changed,p2.hex,preview2));
     await page.keyboard.press('Control+z');
     await waitPixels(page,changed);
-    await page.locator('body').click({position:{x:2,y:2}});
+    await page.mouse.click(2,2);
     await page.keyboard.press('Control+z');
     await waitPixels(page,original);
     await page.keyboard.press('Control+y');
