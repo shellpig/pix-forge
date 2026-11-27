@@ -34,6 +34,7 @@ export interface PersistedFrameRecord {
 
 export interface PersistedWorkspaceSession {
   version: 1;
+  sheetMode?: 'convert' | 'original' | 'native';
   savedAt: number;
   activeSampleId: string | null;
   activeFrameId: string | null;
@@ -101,6 +102,7 @@ export function normalizeRestoredSession(raw: unknown): PersistedWorkspaceSessio
 
   return {
     version: 1,
+    sheetMode: candidate.sheetMode === 'original' || candidate.sheetMode === 'native' ? candidate.sheetMode : undefined,
     savedAt: typeof candidate.savedAt === 'number' ? candidate.savedAt : Date.now(),
     activeSampleId: typeof candidate.activeSampleId === 'string' ? candidate.activeSampleId : null,
     activeFrameId: typeof candidate.activeFrameId === 'string' ? candidate.activeFrameId : null,
