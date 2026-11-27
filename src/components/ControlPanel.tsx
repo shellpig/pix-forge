@@ -33,6 +33,8 @@ import {
 import { useI18n, type TranslationKey } from '../i18n';
 
 interface ControlPanelProps {
+  originalMode?: boolean;
+  originalReadOnly?: boolean;
   paletteNavigationRequest: {kind:'reveal'|'pick'} | null;
   config: PixelEngineConfig;
   result: PixelEngineResult | null;
@@ -114,6 +116,8 @@ const DOWNSCALE_OPTIONS: Array<{ id: DownscaleMode; labelKey: TranslationKey; de
 ];
 
 export function ControlPanel({
+  originalMode = false,
+  originalReadOnly = false,
   config,
   result,
   sourceSize,
@@ -229,7 +233,9 @@ export function ControlPanel({
   return (
     <aside className="w-full md:w-[308px] xl:w-[356px] shrink-0 border-t md:border-t-0 md:border-l border-[#222733] bg-[#11141B] flex flex-col min-h-0">
       <div ref={scrollPanelRef} className="flex-none md:flex-1 md:overflow-y-auto studio-scroll divide-y divide-[#1E2330]">
+        {originalMode && <div className="p-4 text-xs text-sky-200">{result?.width ?? config.targetW} × {result?.height ?? config.targetH} · 1:1</div>}
         {/* Section 1: Output Resolution & Crop */}
+        {!originalMode && <>
         <section className="p-4 space-y-3.5">
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
             {t('panel.resolution')}
@@ -422,8 +428,10 @@ export function ControlPanel({
           </div>
         </section>
 
+        </>}
         {/* Section 3: Color Quantization & Palette */}
         <section className="p-4 space-y-3.5">
+          {!originalMode && <>
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">
             {t('panel.paletteSection')}
           </h2>
@@ -650,6 +658,7 @@ export function ControlPanel({
             </p>
           </div>
 
+          </>}
           {result && result.palette.length > 0 && (
             <div className="pt-1">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A8] mb-1.5">
@@ -673,7 +682,7 @@ export function ControlPanel({
             </div>
           )}
 
-          {result && <div ref={documentPaletteRef} id="document-palette" tabIndex={-1} role="region" aria-label={t('documentPalette.title')} className="outline-none focus-visible:ring-1 focus-visible:ring-sky-400 rounded-sm">
+          {result && !originalReadOnly && <div ref={documentPaletteRef} id="document-palette" tabIndex={-1} role="region" aria-label={t('documentPalette.title')} className="outline-none focus-visible:ring-1 focus-visible:ring-sky-400 rounded-sm">
           {sequenceFrameNames.length > 1 && (
             <div className="flex rounded border border-[#2A3142] overflow-hidden mt-2">
               {(['frame','sequence'] as const).map(scope => (
@@ -717,6 +726,7 @@ export function ControlPanel({
         </section>
 
         {/* Section 4: Tone & Alpha Adjustments */}
+        {!originalMode && <>
         <section className="p-4 space-y-3">
           <h2 className="text-xs font-semibold text-[#E2E8F0] tracking-wide">{t('panel.toneSection')}</h2>
 
@@ -771,7 +781,7 @@ export function ControlPanel({
               className="w-full studio-slider"
             />
           </div>
-        </section>
+        </section></>}
       </div>
 
       {/* Pinned Export Footer inside Inspector */}
