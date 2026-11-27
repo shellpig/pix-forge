@@ -4,13 +4,17 @@ export type SheetMode = 'convert' | 'original' | 'native';
 export const MAX_SHEET_PIXELS = 16_777_216;
 export const MAX_SHEET_FRAMES = 128;
 
-/** Equal-size cells, row-major; reject uneven dimensions rather than silently resample. */
+/** Row-major cells; pad uneven edge lengths to a common size without resampling. */
 export function sheetCells(width: number, height: number, cols: number, rows: number) {
   if (![width,height,cols,rows].every(n => Number.isInteger(n) && n > 0) ||
       cols * rows > MAX_SHEET_FRAMES || width * height > MAX_SHEET_PIXELS ||
-      width % cols || height % rows) throw new Error('Grid must divide the image evenly (maximum 128 frames / 16 MP).');
-  const w = width / cols, h = height / rows;
-  return Array.from({length:cols*rows}, (_,i) => ({x:(i%cols)*w,y:Math.floor(i/cols)*h,w,h}));
+      cols > width || rows > height) throw new Error('Invalid grid (maximum 128 frames / 16 MP).');
+  const outputW=Math.ceil(width/cols),outputH=Math.ceil(height/rows);
+  return Array.from({length:cols*rows}, (_,i) => {
+    const col=i%cols,row=Math.floor(i/cols);
+    const x=Math.round(col*width/cols),y=Math.round(row*height/rows);
+    return {x,y,w:Math.round((col+1)*width/cols)-x,h:Math.round((row+1)*height/rows)-y,outputW,outputH};
+  });
 }
 
 /** Estimate grid using gaps in foreground projections, not individual disconnected sprites. */
