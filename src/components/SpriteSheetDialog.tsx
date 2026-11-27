@@ -25,14 +25,14 @@ export function SpriteSheetDialog({file,zh,onClose,onImport}:{file:File;zh:boole
   },[file,zh]);
   let cells:ReturnType<typeof sheetCells>=[];let validation='';
   if(image){try{cells=sheetCells(image.naturalWidth,image.naturalHeight,cols,rows);
-    if(mode==='native'&&(cells[0].w>256||cells[0].h>256))validation=tr('原生像素精修限 256×256 以下；請使用不轉 Pixel 或先轉換。','Native editing requires cells at most 256×256. Choose original or convert.');
+    if(mode==='native'&&(cells[0].outputW>256||cells[0].outputH>256))validation=tr('原生像素精修限 256×256 以下；請使用不轉 Pixel 或先轉換。','Native editing requires cells at most 256×256. Choose original or convert.');
   }catch(e){validation=String(e);}}
   async function submit(){
     if(!image||!cells.length||validation||busy)return;
     setBusy(true);setError('');
     try{
       const files:File[]=[];
-      const c=document.createElement('canvas');c.width=cells[0].w;c.height=cells[0].h;
+      const c=document.createElement('canvas');c.width=cells[0].outputW;c.height=cells[0].outputH;
       const ctx=c.getContext('2d');if(!ctx)throw new Error('Canvas unavailable');
       for(const [i,cell] of cells.entries()){
         ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(image,cell.x,cell.y,cell.w,cell.h,0,0,cell.w,cell.h);
@@ -48,7 +48,7 @@ export function SpriteSheetDialog({file,zh,onClose,onImport}:{file:File;zh:boole
       {image&&<div className="relative w-fit max-w-full mx-auto"><img src={image.src} alt="Sprite sheet" className="max-w-full max-h-[40dvh] object-contain"/>{cells.length>0&&<div className="absolute inset-0 grid pointer-events-none" style={{gridTemplateColumns:'repeat('+cols+',1fr)',gridTemplateRows:'repeat('+rows+',1fr)'}}>{cells.map((_,i)=><div key={i} className="border border-sky-400/70 text-[10px] text-sky-300">{i+1}</div>)}</div>}</div>}
       <p className="text-xs text-slate-300">{hint}</p>
       <div className="flex gap-3">{[[tr('欄數','Columns'),cols,setCols],[tr('列數','Rows'),rows,setRows]].map(([label,value,setter])=><label key={String(label)} className="flex-1 text-xs">{String(label)}<input type="number" min={1} max={128} value={Number(value)} disabled={busy} onChange={e=>(setter as (v:number)=>void)(Number(e.target.value))} className="block w-full bg-slate-800 rounded p-2"/></label>)}</div>
-      {cells.length>0&&<p className="text-xs">{cells.length} {tr('影格','frames')} · {cells[0].w}×{cells[0].h}</p>}
+      {cells.length>0&&<p className="text-xs">{cells.length} {tr('影格','frames')} · {cells[0].outputW}×{cells[0].outputH}</p>}
       <label className="block text-xs">{tr('處理方式','Processing')}<select className="block w-full bg-slate-800 p-2 rounded" value={mode} disabled={busy} onChange={e=>setMode(e.target.value as SheetMode)}>
         <option value="original">{tr('不轉 Pixel（僅播放與匯出）','No pixel conversion (play/export only)')}</option>
         <option value="native">{tr('不轉 Pixel（確認為原生像素圖）','No pixel conversion (confirmed native pixel art)')}</option>
