@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CodeXml, Globe, ImagePlus } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
+import { SpriteSheetDialog } from './components/SpriteSheetDialog';
+import { originalFrameResult, type SheetMode } from './lib/spriteSheetImport';
 import { PixelEditorState } from './components/PixelEditorBar';
 import { TimelineFramePreview } from './components/FrameTimelineBar';
 import {
@@ -161,6 +163,11 @@ export default function App() {
   const { locale, setLocale, t } = useI18n();
   const tRef = useRef(t);
   tRef.current = t;
+  const zh = String(locale).startsWith('zh');
+  const [sheetMode, setSheetMode] = useState<SheetMode>('convert');
+  const [sheetFile, setSheetFile] = useState<File | null>(null);
+  const sheetInputRef = useRef<HTMLInputElement>(null);
+  const rawLocked = sheetMode === 'original';
   const [frames, setFrames] = useState<AnimationFrameItem[]>([]);
   const [activeFrameId, setActiveFrameId] = useState<string | null>(null);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(BUILTIN_SAMPLES[0].id);
@@ -250,6 +257,10 @@ export default function App() {
     return frames.find((f) => f.id === activeFrameId) || frames[0];
   }, [frames, activeFrameId]);
 
+  const displayConfig = useMemo(() => sheetMode !== 'convert' && activeFrame
+    ? {...config, targetW:activeFrame.sourceImage.naturalWidth,targetH:activeFrame.sourceImage.naturalHeight}
+    : config,[config,sheetMode,activeFrame]);
+
   const anyFrameHasManualEdits = useMemo(
     () => frames.some((f) => f.historyIndex > 0 && f.editHistory.length > 0),
     [frames]
@@ -284,10 +295,10 @@ export default function App() {
   // Only the canvas may read this ephemeral preview. All edits, exports, palette
   // statistics, timeline thumbnails and persistence continue using committed frames.
   const sequenceBlockReason = getBatchBlockReason(frames, {
-    isPlaying, isConversionPending: isConversionPending || conversionFailed,
+    isPlaying, isConversionPending: isConversionPending || conversionFailed || rawLocked,
     isBatchProcessing, hasPendingReconvert, hasPreview: false,
   });
-  const activeCanvasPick = canvasSourcePick && activeResult && activeFrame &&
+  const activeCanvasPick = !rawLocked && canvasSourcePick && activeResult && activeFrame &&
     canvasSourcePick.scope === paletteScope && canvasSourcePick.frames === frames &&
     canvasSourcePick.config === config && canvasSourcePick.pendingReconvert === hasPendingReconvert &&
     (paletteScope === 'sequence' ? !sequenceBlockReason : canvasSourcePick.frameId === activeFrame.id) &&
@@ -300,7 +311,7 @@ export default function App() {
       setPaletteDraftResetVersion(version => version + 1);
     }
   }, [canvasSourcePick, activeCanvasPick]);
-  const sequencePalette = useMemo(() => paletteScope === 'sequence' ? collectSequencePalette(frames) : null, [paletteScope, frames]);
+  const sequencePalette = useMemo(() => !rawLocked && paletteScope === 'sequence' ? collectSequencePalette(frames) : null, [paletteScope, frames, rawLocked]);
   const validSequencePreview = sequencePreview && paletteScope === 'sequence' &&
     sequencePreview.frames === frames && sequencePreview.config === config &&
     sequencePreview.viewMode === viewMode && viewMode !== 'crop' && !sequenceBlockReason
@@ -344,16 +355,16 @@ export default function App() {
   }, [cancelPalettePreview]);
 
   const startCanvasSourcePick = useCallback((mode: CanvasSourcePickMode) => {
-    if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing ||
+    if (rawLocked || !activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing ||
         conversionFailed || (paletteScope === 'sequence' && sequenceBlockReason)) return;
     cancelPalettePreview();
     setCanvasPickEvent(null);
     setCanvasSourcePick({mode,scope:paletteScope,frames,frameId:activeFrame.id,config,pendingReconvert:hasPendingReconvert});
     setViewMode('edit');
   }, [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing,
-    conversionFailed, paletteScope, sequenceBlockReason, frames, config, hasPendingReconvert, cancelPalettePreview]);
+    conversionFailed, paletteScope, sequenceBlockReason, frames, config, hasPendingReconvert, cancelPalettePreview, rawLocked]);
 
-  const canStartCanvasSourcePick = Boolean(activeResult && activeFrame && !isPlaying &&
+  const canStartCanvasSourcePick = Boolean(!rawLocked && activeResult && activeFrame && !isPlaying &&
     !isConversionPending && !isBatchProcessing && !conversionFailed &&
     (paletteScope !== 'sequence' || !sequenceBlockReason));
 
@@ -422,6 +433,19 @@ export default function App() {
       setIsBatchProcessing(false);
       setIsConversionPending(false);
       setConversionFailed(false);
+      return;
+    }
+
+    if (sheetMode !== 'convert') {
+      try {
+        const next = currentFrames.map(frame => frame.convertedResult ? frame : applyFrameConversion(frame, originalFrameResult(frame.sourceImage, sheetMode === 'native')));
+        setFrames(next);
+        setConversionFailed(false);
+      } catch(err) {
+        setErrorMsg(String(err));setConversionFailed(true);
+      }
+      setIsBatchProcessing(false);
+      setIsConversionPending(false);
       return;
     }
 
@@ -530,7 +554,7 @@ export default function App() {
       window.cancelAnimationFrame(computeRaf);
       worker?.terminate(); // Discard stale jobs when sliders or frames change.
     };
-  }, [sourceKey, config, sealBatchHistory]);
+  }, [sourceKey, config, sealBatchHistory, sheetMode]);
 
   // Animation playback loop (rAF with exact FPS delta accumulation)
   useEffect(() => {
@@ -610,6 +634,7 @@ export default function App() {
         const id = makeFrameId();
         clearUndoStacks();
         setErrorMsg(null);
+        setSheetMode('convert');
         setActiveSampleId(sample.id);
         setIsPlaying(false);
         setHasPendingReconvert(false);
@@ -702,6 +727,7 @@ export default function App() {
             workspaceReadyRef.current = true;
             clearUndoStacks();
             setErrorMsg(null);
+            setSheetMode(saved.sheetMode ?? 'convert');
             setActiveSampleId(saved.activeSampleId);
             setIsPlaying(false);
             setHasPendingReconvert(false);
@@ -763,6 +789,7 @@ export default function App() {
 
       void savePersistedWorkspace({
         version: 1,
+        sheetMode,
         savedAt: Date.now(),
         activeSampleId,
         activeFrameId: activeFrameIdRef.current,
@@ -776,10 +803,10 @@ export default function App() {
     }, 450);
 
     return () => window.clearTimeout(timerId);
-  }, [frames, pausedFrameId, activeSampleId, viewMode, config, fps, exportScale, spriteSheetCols]);
+  }, [frames, pausedFrameId, activeSampleId, viewMode, config, fps, exportScale, spriteSheetCols, sheetMode]);
 
   // Multi-file or single-file upload handler (with natural numeric filename sorting!)
-  const handleUploadFiles = useCallback(async (rawFiles: File[], mode: 'replace' | 'append') => {
+  const handleUploadFiles = useCallback(async (rawFiles: File[], mode: 'replace' | 'append', nextSheetMode: SheetMode = 'convert', fromSheet = false) => {
     const imageFiles = rawFiles
       .filter((f) => f.type.startsWith('image/'))
       .sort((a, b) => NATURAL_COLLATOR.compare(a.name, b.name));
@@ -810,6 +837,17 @@ export default function App() {
         })
       );
 
+      if (mode === 'append' && sheetMode !== 'convert') {
+        const first = framesRef.current[0]?.sourceImage;
+        if (first && loaded.some(f=>f.sourceImage.naturalWidth!==first.naturalWidth || f.sourceImage.naturalHeight!==first.naturalHeight)) {
+          setErrorMsg(zh?'新增影格尺寸必須與原始影格相同。':'Appended frames must match original dimensions.');
+          return;
+        }
+        if (sheetMode === 'native') {
+          setErrorMsg(zh?'原生像素工作區請重新匯入完整圖集，以確認所有影格。':'Re-import the complete sheet to confirm all native pixel frames.');
+          return;
+        }
+      }
       workspaceReadyRef.current = true;
       setErrorMsg(null);
       setActiveSampleId(null);
@@ -830,6 +868,8 @@ export default function App() {
       }
 
       // Replace workspace with newly uploaded image(s)
+      setSheetMode(nextSheetMode);
+      if(nextSheetMode !== 'convert')setExportScale(1);
       const firstImg = loaded[0].sourceImage;
       clearUndoStacks();
       setHasPendingReconvert(false);
@@ -860,16 +900,33 @@ export default function App() {
         return { ...prev, targetW: nextW, targetH: nextH, crop };
       });
 
-      if (loaded.length > 1) {
+      if (fromSheet || loaded.length > 1) {
         setViewMode('animate');
         setIsPlaying(true);
       } else {
         setIsPlaying(false);
       }
-    } catch {
+    } catch (err) {
       setErrorMsg(t('error.uploadRead'));
+      if(fromSheet)throw err;
     }
-  }, [clearUndoStacks, sealBatchHistory, t]);
+  }, [clearUndoStacks, sealBatchHistory, t, sheetMode, zh]);
+
+  const convertOriginalFrames = useCallback(() => {
+    const first = framesRef.current[0]?.sourceImage;
+    if(!first)return;
+    if(framesRef.current.some(f=>f.historyIndex>0) && !window.confirm(zh?'轉換將清除目前的手動精修。繼續？':'Conversion clears manual edits. Continue?'))return;
+    setIsPlaying(false);
+    clearUndoStacks();
+    setHasPendingReconvert(false);
+    setPalettePreview(null);setSequencePreview(null);setCanvasSourcePick(null);
+    setFrames(prev=>prev.map(f=>({...f,convertedResult:null,editHistory:[],historyIndex:-1,historyFloor:undefined})));
+    const ratio=first.naturalWidth/first.naturalHeight;
+    const w=Math.max(8,Math.min(256,Math.round(64*Math.min(1,ratio))));
+    const h=Math.max(8,Math.min(256,Math.round(64*Math.min(1,1/ratio))));
+    setConfig(prev=>({...prev,targetW:w,targetH:h,crop:computeCenteredAspectCrop(first.naturalWidth,first.naturalHeight,w,h)}));
+    setSheetMode('convert');setViewMode('pixel');
+  },[clearUndoStacks,zh]);
 
   // Global Ctrl+V clipboard paste support
   useEffect(() => {
@@ -895,21 +952,21 @@ export default function App() {
   // Commit edited pixel frame onto the active frame's Undo/Redo stack
   const handleCommitImageData = useCallback(
     (next: ImageData) => {
-      if (!activeFrame || !activeFrame.convertedResult || validSequencePreview || activeCanvasPick) return;
+      if (rawLocked || !activeFrame || !activeFrame.convertedResult || validSequencePreview || activeCanvasPick) return;
       const committed = commitSinglePixelEdit(readHistoryJournal(), activeFrame.id, next);
       if (!committed) return;
       setPalettePreview(null);
       publishHistoryJournal(committed.journal);
       notifyBatchRetirement(committed.retired);
     },
-    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement, validSequencePreview, activeCanvasPick]
+    [activeFrame, readHistoryJournal, publishHistoryJournal, notifyBatchRetirement, validSequencePreview, activeCanvasPick, rawLocked]
   );
 
   // Every preview starts from the effective committed frame, never from an
   // earlier preview. The same mapping path will serve manual/automatic merge.
   const handlePreviewDocumentColors = useCallback(
     (mapping: ReadonlyMap<string, string>) => {
-      if (!activeResult || !activeFrame || isPlaying || isConversionPending ||
+      if (rawLocked || !activeResult || !activeFrame || isPlaying || isConversionPending ||
           isBatchProcessing || viewMode === 'crop') {
         setPalettePreview(null);
         return;
@@ -926,20 +983,20 @@ export default function App() {
       });
     },
     [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing,
-      viewMode, config, sourceKey, hasPendingReconvert]
+      viewMode, config, sourceKey, hasPendingReconvert, rawLocked]
   );
 
   // One mapping, one commit, one undo entry. Recompute from the committed
   // baseline so no stale or cumulative preview data can enter history.
   const handleApplyDocumentColors = useCallback(
     (mapping: ReadonlyMap<string, string>): boolean => {
-      if (!activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing || activeCanvasPick) return false;
+      if (rawLocked || !activeResult || !activeFrame || isPlaying || isConversionPending || isBatchProcessing || activeCanvasPick) return false;
       const next = createDocumentColorPreview(activeResult.imageData.data, mapping);
       if (!next) return false;
       handleCommitImageData(new ImageData(new Uint8ClampedArray(next.data), activeResult.width, activeResult.height));
       return true;
     },
-    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing, handleCommitImageData, activeCanvasPick]
+    [activeResult, activeFrame, isPlaying, isConversionPending, isBatchProcessing, handleCommitImageData, activeCanvasPick, rawLocked]
   );
 
   const handleReplaceDocumentColor = useCallback(
@@ -961,7 +1018,7 @@ export default function App() {
 
   const handleApplySequenceColors = useCallback((mapping: ReadonlyMap<string, string>) => {
     const committed = commitSequenceColors(readHistoryJournal(), mapping, {
-      isPlaying, isConversionPending: isConversionPending || conversionFailed,
+      isPlaying, isConversionPending: isConversionPending || conversionFailed || rawLocked,
       isBatchProcessing, hasPendingReconvert,
       // Only this exact, still-current sequence draft can be explicitly applied.
       hasPreview: !!activeCanvasPick || (previewImageData !== null && !(validSequencePreview &&
@@ -974,7 +1031,7 @@ export default function App() {
     }
     return committed;
   }, [readHistoryJournal, isPlaying, isConversionPending, conversionFailed, isBatchProcessing,
-    hasPendingReconvert, previewImageData, validSequencePreview, activeCanvasPick, publishHistoryJournal, notifyBatchRetirement, cancelPalettePreview]);
+    hasPendingReconvert, previewImageData, validSequencePreview, activeCanvasPick, publishHistoryJournal, notifyBatchRetirement, cancelPalettePreview, rawLocked]);
 
   const handleApplySequencePalette = useCallback((mapping: ReadonlyMap<string,string>): BatchBlockReason | null => {
     const result = handleApplySequenceColors(mapping);
@@ -1425,6 +1482,8 @@ export default function App() {
             {t('toolbar.upload')}
           </button>
           <div className="flex items-center gap-4 sm:gap-6 h-full overflow-x-auto studio-scroll">
+            <input ref={sheetInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e=>{const file=e.currentTarget.files?.[0];if(file)setSheetFile(file);e.currentTarget.value='';}}/>
+            <button type="button" data-testid="sprite-import-open" className="text-xs whitespace-nowrap shrink-0 text-sky-300" onClick={()=>sheetInputRef.current?.click()}>{zh?'匯入圖集':'Import Sheet'}</button>
             {VIEW_TABS.map((tab) => {
               const active = viewMode === tab.id;
               return (
@@ -1495,6 +1554,11 @@ export default function App() {
         </div>
       )}
 
+      {sheetFile && <SpriteSheetDialog file={sheetFile} zh={zh} onClose={()=>setSheetFile(null)} onImport={(files,mode)=>handleUploadFiles(files,'replace',mode,true)}/>}
+      {sheetMode !== 'convert' && <div role="status" data-testid="original-mode-notice" className="px-4 py-2 flex flex-wrap items-center gap-2 text-xs bg-sky-500/10 text-sky-200">
+        <span>{rawLocked ? (zh?'不轉 Pixel：保留原始影格。此圖未確認為原生像素圖，不支援像素精修；請先轉成 Pixel Art。':'Original frames: pixel editing is disabled until converted to pixel art.') : (zh?'原生像素圖：保留解析度及色彩，可直接精修。':'Native pixel art: original resolution and colors, editing enabled.')}</span>
+        <button type="button" data-testid="convert-original" className="rounded bg-sky-700 px-2 py-1" onClick={convertOriginalFrames}>{zh?'轉換為 Pixel Art':'Convert to Pixel Art'}</button>
+      </div>}
       {/* Main Studio Workspace */}
       <main className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-hidden">
         <CanvasViewport
@@ -1510,8 +1574,8 @@ export default function App() {
           onRevealDocumentPalette={revealDocumentPalette}
           onFinishCanvasSourcePick={finishCanvasSourcePick}
           onCancelPalettePreview={dismissPalettePreview}
-          config={config}
-          viewMode={viewMode}
+          config={displayConfig}
+          viewMode={(rawLocked && viewMode === 'edit') || (sheetMode !== 'convert' && viewMode === 'crop') ? 'pixel' : viewMode}
           editor={editor}
           canUndo={Boolean(previewImageData || activeCanvasPick || canUndoActive)}
           canRedo={canRedoActive}
@@ -1555,7 +1619,9 @@ export default function App() {
 
         <ControlPanel
           paletteNavigationRequest={paletteNavigationRequest}
-          config={config}
+           originalMode={sheetMode !== 'convert'}
+           originalReadOnly={rawLocked}
+          config={displayConfig}
           result={activeResult}
           sourceSize={
             activeFrame
@@ -1579,7 +1645,7 @@ export default function App() {
           onResetConfig={handleResetConfig}
           onPickColor={handlePickColor}
           activeFrameId={activeFrame?.id ?? null}
-          paletteEditingDisabled={isPlaying || isConversionPending || isBatchProcessing}
+          paletteEditingDisabled={rawLocked || isPlaying || isConversionPending || isBatchProcessing}
            paletteScope={paletteScope}
            onChangePaletteScope={handleChangePaletteScope}
            sequencePalette={sequencePalette}
@@ -1597,7 +1663,7 @@ export default function App() {
            onStartCanvasSourcePick={startCanvasSourcePick}
            onStopCanvasSourcePick={stopCanvasSourcePick}
            onFinishCanvasSourcePick={finishCanvasSourcePick}
-           canvasSourcePickDisabled={conversionFailed}
+           canvasSourcePickDisabled={conversionFailed || rawLocked}
            palettePreviewActive={previewImageData !== null}
           paletteDraftResetVersion={paletteDraftResetVersion}
           palettePreviewDisabled={viewMode === 'crop'}
