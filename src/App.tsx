@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CodeXml, Globe, ImagePlus } from 'lucide-react';
+import { CodeXml, Globe, ImagePlus, Grid2X2 } from 'lucide-react';
 import { CanvasViewport, ViewMode } from './components/CanvasViewport';
 import { ControlPanel } from './components/ControlPanel';
 import { SpriteSheetDialog } from './components/SpriteSheetDialog';
@@ -1483,7 +1483,16 @@ export default function App() {
           </button>
           <div className="flex items-center gap-4 sm:gap-6 h-full overflow-x-auto studio-scroll">
             <input ref={sheetInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e=>{const file=e.currentTarget.files?.[0];if(file)setSheetFile(file);e.currentTarget.value='';}}/>
-            <button type="button" data-testid="sprite-import-open" className="text-xs whitespace-nowrap shrink-0 text-sky-300" onClick={()=>sheetInputRef.current?.click()}>{zh?'匯入圖集':'Import Sheet'}</button>
+            <button
+              type="button"
+              data-testid="sprite-import-open"
+              className="inline-flex shrink-0 items-center gap-1.5 px-2 sm:px-3 py-1.5 text-sm font-medium whitespace-nowrap text-[#F1F5F9] bg-[#1C212D] hover:bg-[#252C3B] border border-[#2D3546] rounded-md cursor-pointer"
+              onClick={()=>sheetInputRef.current?.click()}
+              title={zh?'匯入圖集':'Import Sheet'}
+            >
+              <Grid2X2 className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+              {zh?'匯入圖集':'Import Sheet'}
+            </button>
             {VIEW_TABS.map((tab) => {
               const active = viewMode === tab.id;
               return (
